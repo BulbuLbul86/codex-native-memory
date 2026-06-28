@@ -3,14 +3,46 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 from codex_native_memory.db import MemoryDB
-from codex_native_memory.mcp_server import handle_message
+from codex_native_memory.mcp_server import handle_message, serve
 from codex_native_memory.transcripts import ParsedMessage, ParsedSession
 
 
+def _frame(payload: dict[str, object]) -> bytes:
+    body = json.dumps(payload).encode("utf-8")
+    return b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body
+
+
 class McpServerTests(unittest.TestCase):
+    def test_serve_lists_tools_without_opening_memory_db(self) -> None:
+        initialize = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "test", "version": "0"},
+            },
+        }
+        tools_list = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+        stdin = BytesIO(_frame(initialize) + _frame(tools_list))
+        stdout = BytesIO()
+
+        with patch(
+            "codex_native_memory.mcp_server.MemoryDB",
+            side_effect=AssertionError("tools/list should not open the memory database"),
+        ):
+            serve(stdin=stdin, stdout=stdout)
+
+        output = stdout.getvalue()
+        self.assertIn(b"codex-native-memory", output)
+        self.assertIn(b"memory_search", output)
+
     def test_tools_list_and_memory_search_return_json_rpc_results(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = MemoryDB(Path(tmp) / "memory.sqlite3")
@@ -188,7 +220,7 @@ class McpServerTests(unittest.TestCase):
         self.assertIn("memory_import_bundle", tool_names)
         self.assertIn("memory_forget", tool_names)
         self.assertIn("memory_sources", tool_names)
-        self.assertIn("anyOf", import_tool["inputSchema"])
+        self.assertNotIn("anyOf", import_tool["inputSchema"])
         self.assertEqual(payload[0]["session_id"], "s1")
         self.assertEqual(remember_payload["project"], "demo")
         self.assertEqual(update_payload["id"], remember_payload["id"])

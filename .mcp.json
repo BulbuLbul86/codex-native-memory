@@ -2,6 +2,7 @@
   "mcpServers": {
     "codex_native_memory": {
       "command": "powershell.exe",
+      "cwd": ".",
       "args": [
         "-NoProfile",
         "-ExecutionPolicy",

@@ -172,10 +172,12 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "memory_import_bundle",
-        "description": "Import pinned memory items from a memory_export JSON bundle.",
+        "description": (
+            "Import pinned memory items from a memory_export JSON bundle. "
+            "Provide payload or payload_json."
+        ),
         "inputSchema": {
             "type": "object",
-            "anyOf": [{"required": ["payload"]}, {"required": ["payload_json"]}],
             "properties": {
                 "payload": {"type": "object"},
                 "payload_json": {"type": "string"},
@@ -221,18 +223,20 @@ def serve(
     stdin: BinaryIO | None = None,
     stdout: BinaryIO | None = None,
 ) -> None:
-    database = db or MemoryDB()
+    database = db
     transport = StdioTransport(stdin or sys.stdin.buffer, stdout or sys.stdout.buffer)
     while True:
         message = transport.read_message()
         if message is None:
             break
+        if database is None and message.get("method") == "tools/call":
+            database = MemoryDB()
         response = handle_message(database, message)
         if response is not None:
             transport.write_message(response)
 
 
-def handle_message(db: MemoryDB, message: dict[str, Any]) -> dict[str, Any] | None:
+def handle_message(db: MemoryDB | None, message: dict[str, Any]) -> dict[str, Any] | None:
     method = message.get("method")
     request_id = message.get("id")
     if method and method.startswith("notifications/"):
@@ -250,6 +254,8 @@ def handle_message(db: MemoryDB, message: dict[str, Any]) -> dict[str, Any] | No
         elif method == "tools/list":
             result = {"tools": TOOLS}
         elif method == "tools/call":
+            if db is None:
+                db = MemoryDB()
             result = call_tool(db, message.get("params") or {})
         else:
             return _error(request_id, -32601, f"Unknown method: {method}")
