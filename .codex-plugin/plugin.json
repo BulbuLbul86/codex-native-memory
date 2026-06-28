@@ -1,0 +1,23 @@
+{
+  "name": "codex-native-memory",
+  "version": "0.1.0",
+  "description": "Local cross-session memory for Codex Desktop and Codex CLI.",
+  "author": {
+    "name": "Codex Native Memory contributors"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Native Memory",
+    "shortDescription": "Search and summarize local Codex conversations.",
+    "longDescription": "Imports Codex transcript JSONL files into local SQLite, exposes cross-session search through MCP, and can summarize with the local Codex CLI.",
+    "developerName": "Codex Native Memory contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "MCP server",
+      "Local SQLite index",
+      "Codex exec summaries"
+    ],
+    "defaultPrompt": "Search my Codex memory for relevant context before answering."
+  },
+  "mcpServers": "./.mcp.json"
+}
