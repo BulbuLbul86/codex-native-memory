@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 from datetime import UTC, datetime
@@ -356,6 +357,48 @@ class MemoryDB:
             results.extend(self._search_observations(query, limit=limit))
         return results[:limit]
 
+    def project_context(
+        self,
+        *,
+        project: str | None = None,
+        cwd: str | Path | None = None,
+        query: str | None = None,
+        limit: int = 5,
+    ) -> dict[str, Any]:
+        project_name = self._resolve_project(project=project, cwd=cwd)
+        session_count = self._project_session_count(project_name)
+        recent = self.recent_sessions(limit=limit, project=project_name)
+        summaries = self._project_summaries(project_name, limit=limit)
+        observations = self._project_observations(project_name, limit=max(limit * 2, 10))
+        matches = self._project_matches(project_name, query=query, limit=limit)
+        decisions = _context_strings(
+            (decision for summary in summaries for decision in summary["decisions"]),
+            limit=max(limit * 2, 6),
+        )
+        open_questions = _context_strings(
+            (question for summary in summaries for question in summary["open_questions"]),
+            limit=max(limit * 2, 6),
+        )
+        return {
+            "project": project_name,
+            "session_count": session_count,
+            "brief": _context_brief(
+                project=project_name,
+                session_count=session_count,
+                summaries=summaries,
+                decisions=decisions,
+                open_questions=open_questions,
+                observations=observations,
+                matches=matches,
+            ),
+            "recent_sessions": recent,
+            "summaries": summaries,
+            "decisions": decisions,
+            "open_questions": open_questions,
+            "observations": observations,
+            "relevant_matches": matches,
+        }
+
     def _search_messages(
         self, query: str, *, limit: int, role: str | None = None
     ) -> list[dict[str, Any]]:
@@ -441,19 +484,166 @@ class MemoryDB:
             for row in rows
         ]
 
-    def recent_sessions(self, *, limit: int = 10) -> list[dict[str, Any]]:
+    def recent_sessions(
+        self,
+        *,
+        limit: int = 10,
+        project: str | None = None,
+    ) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             """
             SELECT
               id, source_app, source_kind, title, cwd, project,
               started_at, updated_at, internal
             FROM sessions
+            WHERE (? IS NULL OR project = ?)
             ORDER BY COALESCE(updated_at, started_at) DESC
             LIMIT ?
             """,
-            (limit,),
+            (project, project, limit),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def _project_summaries(self, project: str | None, *, limit: int) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT
+              s.session_id, s.summary, s.decisions_json, s.open_questions_json,
+              s.updated_at, sess.title, sess.project, sess.cwd
+            FROM session_summaries s
+            JOIN sessions sess ON sess.id = s.session_id
+            WHERE (? IS NULL OR sess.project = ?)
+            ORDER BY s.updated_at DESC
+            LIMIT ?
+            """,
+            (project, project, limit),
+        ).fetchall()
+        return [
+            {
+                "session_id": row["session_id"],
+                "title": row["title"],
+                "project": row["project"],
+                "cwd": row["cwd"],
+                "summary": row["summary"],
+                "decisions": _context_strings(_json_string_list(row["decisions_json"]), limit=8),
+                "open_questions": _context_strings(
+                    _json_string_list(row["open_questions_json"]),
+                    limit=8,
+                ),
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
+
+    def _project_observations(self, project: str | None, *, limit: int) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT
+              o.session_id, o.scope, o.subject, o.text, o.confidence,
+              o.created_at, sess.project
+            FROM observations o
+            JOIN sessions sess ON sess.id = o.session_id
+            WHERE (? IS NULL OR sess.project = ?)
+            ORDER BY o.confidence DESC, o.created_at DESC
+            LIMIT ?
+            """,
+            (project, project, limit * 3),
+        ).fetchall()
+        deduped: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
+        for row in rows:
+            key = (row["scope"], row["subject"], row["text"])
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(
+                {
+                    "session_id": row["session_id"],
+                    "project": row["project"],
+                    "scope": row["scope"],
+                    "subject": row["subject"],
+                    "text": row["text"],
+                    "confidence": row["confidence"],
+                    "created_at": row["created_at"],
+                }
+            )
+            if len(deduped) >= limit:
+                break
+        return deduped
+
+    def _project_matches(
+        self,
+        project: str | None,
+        *,
+        query: str | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        if not query:
+            return []
+        matches = self.search(query, limit=max(limit * 3, 10), kind="all")
+        if not project:
+            return matches[:limit]
+        session_ids = {
+            row["id"]
+            for row in self.conn.execute(
+                "SELECT id FROM sessions WHERE project = ?",
+                (project,),
+            ).fetchall()
+        }
+        return [match for match in matches if match.get("session_id") in session_ids][:limit]
+
+    def _latest_project(self) -> str | None:
+        row = self.conn.execute(
+            """
+            SELECT project
+            FROM sessions
+            WHERE project IS NOT NULL AND project != ''
+            ORDER BY COALESCE(updated_at, started_at) DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        return str(row["project"]) if row else None
+
+    def _resolve_project(self, *, project: str | None, cwd: str | Path | None) -> str | None:
+        clean_project = str(project).strip() if project else ""
+        if clean_project:
+            return clean_project
+        if cwd is not None:
+            matched = self._project_for_cwd(cwd)
+            if matched:
+                return matched
+            cwd_project = _project_from_cwd(cwd)
+            if cwd_project and self._project_session_count(cwd_project) > 0:
+                return cwd_project
+        return self._latest_project()
+
+    def _project_for_cwd(self, cwd: str | Path) -> str | None:
+        target = _normalized_path(cwd)
+        rows = self.conn.execute(
+            """
+            SELECT project, cwd
+            FROM sessions
+            WHERE project IS NOT NULL AND project != '' AND cwd IS NOT NULL AND cwd != ''
+            """
+        ).fetchall()
+        best_project: str | None = None
+        best_length = -1
+        for row in rows:
+            session_cwd = _normalized_path(row["cwd"])
+            if _path_is_under(target, session_cwd) and len(session_cwd) > best_length:
+                best_project = str(row["project"])
+                best_length = len(session_cwd)
+        return best_project
+
+    def _project_session_count(self, project: str | None) -> int:
+        if not project:
+            row = self.conn.execute("SELECT COUNT(*) AS count FROM sessions").fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT COUNT(*) AS count FROM sessions WHERE project = ?",
+                (project,),
+            ).fetchone()
+        return int(row["count"])
 
     def stats(self) -> dict[str, Any]:
         def count(query: str) -> int:
@@ -482,6 +672,96 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _json_string_list(value: str | None) -> list[str]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    return _string_list(parsed)
+
+
+def _context_strings(values: Any, *, limit: int) -> list[str]:
+    filtered: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = _clean_context_string(str(value))
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        filtered.append(text)
+        if len(filtered) >= limit:
+            break
+    return filtered
+
+
+def _clean_context_string(value: str) -> str:
+    text = re.sub(r"\s+", " ", value).strip()
+    text = re.sub(r"^[-*]\s+", "", text).strip()
+    if len(text) < 12:
+        return ""
+    lowered = text.lower()
+    prompt_starts = (
+        "дай ",
+        "скажи",
+        "что там",
+        "what ",
+        "tell ",
+        "show ",
+        "list ",
+    )
+    if lowered.startswith(prompt_starts):
+        return ""
+    if len(text) > 180:
+        return _snippet(text, limit=180)
+    return text
+
+
+def _context_brief(
+    *,
+    project: str | None,
+    session_count: int,
+    summaries: list[dict[str, Any]],
+    decisions: list[str],
+    open_questions: list[str],
+    observations: list[dict[str, Any]],
+    matches: list[dict[str, Any]],
+) -> str:
+    parts = [f"Project: {project or 'all'} ({session_count} sessions)."]
+    if summaries:
+        parts.append(f"Latest: {_snippet(str(summaries[0]['summary']), limit=220)}")
+    if decisions:
+        parts.append("Decisions: " + "; ".join(decisions[:3]))
+    if open_questions:
+        parts.append("Open questions: " + "; ".join(open_questions[:3]))
+    if observations:
+        top_observations = [str(item["text"]) for item in observations[:3]]
+        parts.append("Observations: " + "; ".join(top_observations))
+    if matches:
+        parts.append(f"Relevant matches: {len(matches)}.")
+    return "\n".join(parts)
+
+
+def _project_from_cwd(cwd: str | Path) -> str | None:
+    name = Path(cwd).expanduser().name
+    return name or str(cwd)
+
+
+def _normalized_path(value: str | Path) -> str:
+    try:
+        path = Path(value).expanduser().resolve()
+    except OSError:
+        path = Path(value).expanduser().absolute()
+    return os.path.normcase(str(path)).rstrip("\\/")
+
+
+def _path_is_under(candidate: str, parent: str) -> bool:
+    if not candidate or not parent:
+        return False
+    return candidate == parent or candidate.startswith(parent + os.sep)
 
 
 def _fts_query(query: str) -> str:

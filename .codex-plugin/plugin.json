@@ -1,6 +1,6 @@
 {
   "name": "codex-native-memory",
-  "version": "0.1.0+codex.20260628212137",
+  "version": "0.1.0+codex.20260628213227",
   "description": "Local cross-session memory for Codex Desktop and Codex CLI.",
   "author": {
     "name": "Codex Native Memory contributors"
@@ -15,6 +15,7 @@
     "capabilities": [
       "MCP server",
       "Local SQLite index",
+      "Project memory context",
       "Codex exec summaries",
       "External AI sources",
       "AI review targets"

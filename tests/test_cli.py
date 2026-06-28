@@ -98,6 +98,17 @@ class CliTests(unittest.TestCase):
             process_code, process_output = self.run_cli(
                 ["--data-dir", tmp, "process-queue", "--mode", "extractive", "--limit", "1"]
             )
+            context_code, context_output = self.run_cli(
+                [
+                    "--data-dir",
+                    tmp,
+                    "context",
+                    "durable CLI token",
+                    "--cwd",
+                    str(root / "project"),
+                    "--json",
+                ]
+            )
             list_code, list_output = self.run_cli(["--data-dir", tmp, "sources", "list", "--json"])
             remove_code, remove_output = self.run_cli(
                 ["--data-dir", tmp, "sources", "remove", "missing"]
@@ -114,6 +125,12 @@ class CliTests(unittest.TestCase):
             self.assertEqual(json.loads(search_output)[0]["session_id"], "cli-session")
             self.assertEqual(process_code, 0)
             self.assertEqual(json.loads(process_output)["done"], 1)
+            self.assertEqual(context_code, 0)
+            context_payload = json.loads(context_output)
+            self.assertEqual(context_payload["project"], "project")
+            self.assertIn("Project: project", context_payload["brief"])
+            self.assertEqual(context_payload["summaries"][0]["session_id"], "cli-session")
+            self.assertEqual(context_payload["relevant_matches"][0]["session_id"], "cli-session")
             self.assertEqual(list_code, 0)
             self.assertEqual(json.loads(list_output)[0]["id"], "codex")
             self.assertEqual(remove_code, 0)

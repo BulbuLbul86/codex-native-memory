@@ -83,6 +83,14 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--json", action="store_true")
     search.set_defaults(handler=cmd_search)
 
+    context = subcommands.add_parser("context", help="Build project-oriented memory context.")
+    context.add_argument("query", nargs="?", default=None)
+    context.add_argument("--project")
+    context.add_argument("--cwd")
+    context.add_argument("--limit", type=int, default=5)
+    context.add_argument("--json", action="store_true")
+    context.set_defaults(handler=cmd_context)
+
     process = subcommands.add_parser("process-queue", help="Summarize pending sessions.")
     process.add_argument("--limit", type=int, default=10)
     process.add_argument("--mode", choices=["auto", "codex", "extractive"], default="auto")
@@ -222,6 +230,31 @@ def cmd_search(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_context(args: argparse.Namespace) -> int:
+    root = ensure_runtime_dirs(args.data_dir)
+    db = MemoryDB(root / "memory.sqlite3")
+    payload = db.project_context(
+        project=args.project,
+        cwd=args.cwd,
+        query=args.query,
+        limit=args.limit,
+    )
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"Project: {payload.get('project') or 'all'}")
+        print(f"Sessions: {payload['session_count']}")
+        print("\nBrief:")
+        print(payload["brief"])
+        _print_context_section("Decisions", payload["decisions"])
+        _print_context_section("Open questions", payload["open_questions"])
+        _print_observations(payload["observations"])
+        _print_summaries(payload["summaries"])
+        _print_matches(payload["relevant_matches"])
+    db.close()
+    return 0
+
+
 def cmd_process_queue(args: argparse.Namespace) -> int:
     root = ensure_runtime_dirs(args.data_dir)
     db = MemoryDB(root / "memory.sqlite3")
@@ -322,3 +355,36 @@ def cmd_mcp(args: argparse.Namespace) -> int:
     db = MemoryDB(root / "memory.sqlite3")
     serve(db)
     return 0
+
+
+def _print_context_section(title: str, items: list[str]) -> None:
+    if not items:
+        return
+    print(f"\n{title}:")
+    for item in items:
+        print(f"- {item}")
+
+
+def _print_observations(items: list[dict[str, Any]]) -> None:
+    if not items:
+        return
+    print("\nObservations:")
+    for item in items:
+        print(f"- [{item['scope']}/{item['subject']}] {item['text']}")
+
+
+def _print_summaries(items: list[dict[str, Any]]) -> None:
+    if not items:
+        return
+    print("\nRecent summaries:")
+    for item in items:
+        title = item.get("title") or item["session_id"]
+        print(f"- {title}: {item['summary']}")
+
+
+def _print_matches(items: list[dict[str, Any]]) -> None:
+    if not items:
+        return
+    print("\nRelevant matches:")
+    for item in items:
+        print(f"- [{item['type']}] {item['session_id']}: {item['text']}")

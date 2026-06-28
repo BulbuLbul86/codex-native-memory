@@ -39,6 +39,22 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "memory_context",
+        "description": (
+            "Build project-oriented memory context: summaries, decisions, open questions, "
+            "observations, recent sessions, and optional query matches."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "project": {"type": "string"},
+                "cwd": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+            },
+        },
+    },
+    {
         "name": "memory_import",
         "description": "Import changed Codex transcript JSONL files into memory.",
         "inputSchema": {
@@ -127,6 +143,14 @@ def call_tool(db: MemoryDB, params: dict[str, Any]) -> dict[str, Any]:
     elif name == "memory_recent":
         limit = int(arguments.get("limit") or 10)
         payload = db.recent_sessions(limit=limit)
+    elif name == "memory_context":
+        limit = int(arguments.get("limit") or 5)
+        payload = db.project_context(
+            project=_optional_string(arguments.get("project")),
+            cwd=_optional_string(arguments.get("cwd")),
+            query=_optional_string(arguments.get("query")),
+            limit=limit,
+        )
     elif name == "memory_import":
         raw_limit = arguments.get("limit")
         source_id = arguments.get("source_id")
@@ -194,3 +218,8 @@ class StdioTransport:
 
 def _error(request_id: Any, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
+
+
+def _optional_string(value: Any) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return text or None

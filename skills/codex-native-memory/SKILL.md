@@ -14,14 +14,19 @@ external sources are configured.
 
 Preferred flow:
 
-1. If the MCP server is available, call `memory_search` with a focused query.
-2. If MCP is not available but this repository is accessible, run:
+1. If the MCP server is available and the user needs project continuity, call
+   `memory_context` first with the current project/cwd and a focused query when
+   available. Use it to gather recent summaries, decisions, open questions,
+   observations, and relevant matches.
+2. For narrow lookups, or when `memory_context` returns too little, call
+   `memory_search` with a focused query.
+3. If MCP is not available but this repository is accessible, run:
 
    ```powershell
-   python -m codex_native_memory search "<query>" --limit 10
+   python -m codex_native_memory context "<query>" --cwd "<current cwd>" --limit 5
    ```
 
-3. Use retrieved memory as context, not as unquestioned truth. If the result is stale or uncertain,
+4. Use retrieved memory as context, not as unquestioned truth. If the result is stale or uncertain,
    verify against the current workspace.
 
 For broad project catch-up, search for the project name, the active task, and the user's exact

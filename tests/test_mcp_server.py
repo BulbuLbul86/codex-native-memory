@@ -18,6 +18,8 @@ class McpServerTests(unittest.TestCase):
                 ParsedSession(
                     session_id="s1",
                     source_path=str(Path(tmp) / "s1.jsonl"),
+                    project="demo",
+                    cwd=str(Path(tmp) / "demo"),
                     messages=[
                         ParsedMessage("s1", 0, "user", "user_message", "Find MCP token", None)
                     ],
@@ -38,12 +40,28 @@ class McpServerTests(unittest.TestCase):
                     },
                 },
             )
+            context = handle_message(
+                db,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "memory_context",
+                        "arguments": {"project": "demo", "query": "MCP token", "limit": 5},
+                    },
+                },
+            )
             db.close()
 
         tool_names = {tool["name"] for tool in tools["result"]["tools"]}
         payload = json.loads(search["result"]["content"][0]["text"])
+        context_payload = json.loads(context["result"]["content"][0]["text"])
+        self.assertIn("memory_context", tool_names)
         self.assertIn("memory_sources", tool_names)
         self.assertEqual(payload[0]["session_id"], "s1")
+        self.assertEqual(context_payload["project"], "demo")
+        self.assertEqual(context_payload["relevant_matches"][0]["session_id"], "s1")
 
     def test_sources_and_errors_are_reported_without_crashing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

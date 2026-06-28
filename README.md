@@ -23,6 +23,7 @@ This is an MVP. It already supports:
 - importing `~/.codex/sessions/**/*.jsonl`;
 - SQLite storage with FTS5 search when available;
 - a stdio MCP server with search, import, recent sessions, and health tools;
+- project-oriented memory context with summaries, decisions, questions, and observations;
 - queue processing with extractive summaries;
 - optional AI summaries through `codex exec --ephemeral`;
 - optional configurable external sources through `sources.json`;
@@ -61,6 +62,7 @@ From this directory:
 python -m codex_native_memory doctor
 python -m codex_native_memory init
 python -m codex_native_memory backfill --limit 50
+python -m codex_native_memory context "current task" --cwd "$PWD" --limit 5
 python -m codex_native_memory search "VPN" --limit 5
 python -m codex_native_memory process-queue --limit 5 --mode extractive
 ```
@@ -87,6 +89,7 @@ init                         Create the local SQLite database.
 backfill                     Import changed transcript JSONL files.
 watch                        Poll transcript files and import changes.
 search <query>               Search messages, summaries, and observations.
+context [query]              Build project-oriented memory context.
 process-queue                Summarize imported sessions.
 mcp                          Run the MCP stdio server.
 ```
@@ -97,6 +100,8 @@ Data defaults to `%USERPROFILE%\.codex-native-memory`. Override it with
 ## MCP tools
 
 - `memory_search`: search imported conversations.
+- `memory_context`: build project-oriented context from recent sessions, summaries,
+  decisions, open questions, observations, and optional query matches.
 - `memory_recent`: list recent imported sessions.
 - `memory_import`: import changed Codex transcript files.
 - `memory_sources`: list attached sources and external review options.
