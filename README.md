@@ -10,10 +10,11 @@ is required. The summarizer uses the user's existing Codex/ChatGPT auth through
 
 The architecture is Codex-first and project-centric. Codex is the primary
 coding shell and the default coding AI. Claude, Gemini, Cursor, Aider, or other
-AI systems can attach as external sources or review targets. Imported sessions
-are stored with `source_app` and `source_kind` metadata so external transcripts
-flow into the same local project memory without taking over the main Codex
-workflow.
+AI systems can attach later as optional external sources or review targets.
+Codex-only mode is the normal default: if you do not use Claude, Gemini, or any
+other AI, there is nothing extra to configure. Imported sessions are stored with
+`source_app` and `source_kind` metadata so future external transcripts can flow
+into the same local project memory without taking over the main Codex workflow.
 
 ## Status
 
@@ -24,7 +25,7 @@ This is an MVP. It already supports:
 - a stdio MCP server with search, import, recent sessions, and health tools;
 - queue processing with extractive summaries;
 - optional AI summaries through `codex exec --ephemeral`;
-- configurable external sources through `sources.json`;
+- optional configurable external sources through `sources.json`;
 - optional review targets for Claude, Gemini, or generic external AI checks;
 - a Codex plugin manifest and helper scripts.
 
@@ -35,8 +36,10 @@ Planned adapter direction:
 - `gemini`: local Gemini CLI/project history importer;
 - `generic-jsonl`: user-supplied transcript folders mapped into the canonical schema.
 
-Codex always remains the default coding AI. Claude, Gemini, and other tools
-attach to it as memory sources or optional review targets:
+Codex always remains the default coding AI. If you only use Codex, skip this
+section. Later, Claude, Gemini, and other tools can attach to it as memory
+sources or optional review targets by pointing the plugin at their transcript
+paths:
 
 ```powershell
 python -m codex_native_memory sources list
@@ -46,8 +49,9 @@ python -m codex_native_memory backfill --all-sources
 python -m codex_native_memory sources review-options
 ```
 
-Before using external AI review, ask the user whether they want to check the
-new code only in Codex or also through configured review targets.
+Before using external AI review, check whether review targets are configured.
+If none are configured, keep review inside Codex and do not ask the user to
+connect external AI tools.
 
 ## Quick start
 
@@ -69,7 +73,7 @@ To expose it to Codex as MCP:
 
 Restart Codex after installing the MCP entry.
 
-To attach Claude/Gemini sources interactively:
+To attach Claude/Gemini sources interactively later:
 
 ```powershell
 .\scripts\configure-sources.ps1

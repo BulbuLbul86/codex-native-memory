@@ -138,19 +138,30 @@ def get_source(config: SourcesConfig, source_id: str) -> SourceDefinition | None
 def review_options(config: SourcesConfig) -> dict[str, Any]:
     default_source = config.default_coding_source()
     targets = config.review_sources()
-    question = "Проверяем новый код только в Codex или подключаем внешнее AI-ревью?"
+    external_review_configured = bool(targets)
+    question = "Внешние AI-ревью не настроены. Проверка нового кода остаётся внутри Codex."
     if targets:
         names = ", ".join(source.name for source in targets)
-        question = f"{question} Настроенные цели: {names}."
+        question = (
+            "Проверяем новый код только в Codex или подключаем настроенное внешнее "
+            f"AI-ревью? Настроенные цели: {names}."
+        )
     return {
         "primary_coding_ai": asdict(default_source) if default_source else None,
+        "external_review_configured": external_review_configured,
         "review_targets": [asdict(source) for source in targets],
         "question": question,
         "suggested_prompt": build_review_prompt_template(targets),
+        "configure_hint": (
+            "External AI sources are optional. If you only use Codex, no setup is needed. "
+            "Later, add a source with `sources add <id> --type <type> --path <glob>`."
+        ),
     }
 
 
 def build_review_prompt_template(targets: list[SourceDefinition]) -> str:
+    if not targets:
+        return "Keep the review inside Codex; no external AI review targets are configured."
     target_names = ", ".join(source.name for source in targets) or "external AI reviewer"
     return (
         f"Ask {target_names} to review the current code changes. "

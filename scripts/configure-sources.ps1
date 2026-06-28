@@ -9,11 +9,15 @@ if ($env:PYTHONPATH) {
 }
 
 Write-Host "Codex is the primary coding AI."
-Write-Host "Claude, Gemini, and other tools can be attached as memory sources or review targets."
+Write-Host "If you only use Codex, press Enter to skip every optional external source."
+Write-Host "Claude, Gemini, and other tools can be attached later as memory sources or review targets."
 Write-Host ""
+
+$configured = $false
 
 $claudePath = Read-Host "Claude transcript glob (leave empty to skip)"
 if ($claudePath) {
+  $configured = $true
   $claudeReview = Read-Host "Claude review command (leave empty for prompt-only)"
   $args = @(
     "-m", "codex_native_memory", "sources", "add", "claude",
@@ -30,6 +34,7 @@ if ($claudePath) {
 
 $geminiPath = Read-Host "Gemini transcript glob (leave empty to skip)"
 if ($geminiPath) {
+  $configured = $true
   $geminiReview = Read-Host "Gemini review command (leave empty for prompt-only)"
   $args = @(
     "-m", "codex_native_memory", "sources", "add", "gemini",
@@ -47,5 +52,10 @@ if ($geminiPath) {
 Write-Host ""
 python -m codex_native_memory sources list
 Write-Host ""
-Write-Host "To import all configured sources later:"
-Write-Host "python -m codex_native_memory backfill --all-sources"
+if ($configured) {
+  Write-Host "To import all configured sources later:"
+  Write-Host "python -m codex_native_memory backfill --all-sources"
+} else {
+  Write-Host "No external sources configured. Codex-only mode is ready."
+  Write-Host "Later, rerun this script or use: python -m codex_native_memory sources add <id> --type <type> --path <glob>"
+}

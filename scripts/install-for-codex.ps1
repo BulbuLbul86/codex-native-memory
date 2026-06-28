@@ -53,5 +53,5 @@ Set-Content -LiteralPath $ConfigPath -Value ($config.TrimEnd() + $block) -Encodi
 
 Write-Host "Codex Native Memory MCP entry installed."
 Write-Host "Codex remains the primary coding AI."
-Write-Host "To attach Claude/Gemini sources, run: .\scripts\configure-sources.ps1"
+Write-Host "No external AI sources are required. If you add them later, run: .\scripts\configure-sources.ps1"
 Write-Host "Restart Codex to pick up the new MCP server."

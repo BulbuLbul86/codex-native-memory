@@ -20,10 +20,15 @@ class SourcesTests(unittest.TestCase):
             config = load_sources(tmp)
 
             primary = config.default_coding_source()
+            options = review_options(config)
 
             self.assertIsNotNone(primary)
             self.assertEqual(primary.id, "codex")
             self.assertEqual(primary.name, "Codex")
+            self.assertFalse(options["external_review_configured"])
+            self.assertEqual(options["review_targets"], [])
+            self.assertIn("остаётся внутри Codex", options["question"])
+            self.assertNotIn("external AI reviewer", options["suggested_prompt"])
 
     def test_external_review_target_attaches_to_codex(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

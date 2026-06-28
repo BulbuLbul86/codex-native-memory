@@ -9,7 +9,8 @@ Use this skill when the task needs context from earlier Codex chats.
 
 Codex is the primary coding AI. Claude, Gemini, Cursor, Aider, and other tools
 are optional attached sources or review targets. Never describe an external AI
-as the default coding AI.
+as the default coding AI. Codex-only mode is complete and expected when no
+external sources are configured.
 
 Preferred flow:
 
@@ -28,6 +29,8 @@ phrasing. For implementation work, prefer concrete facts: decisions, constraints
 and unresolved tasks.
 
 When the user writes new code and asks to verify it, check configured review
-targets with `memory_sources` action `review-options` when available. Ask
-whether to keep review inside Codex only or also prepare/send an external
-Claude/Gemini/generic review.
+targets with `memory_sources` action `review-options` when available. If no
+review targets are configured, keep the review inside Codex and do not ask
+about Claude/Gemini/generic review. If review targets exist, ask whether to
+keep review inside Codex only or also prepare/send the configured external
+review.

@@ -74,6 +74,8 @@ class McpServerTests(unittest.TestCase):
 
         payload = json.loads(sources["result"]["content"][0]["text"])
         self.assertEqual(payload["primary_coding_ai"]["id"], "codex")
+        self.assertFalse(payload["external_review_configured"])
+        self.assertEqual(payload["review_targets"], [])
         self.assertEqual(unknown["error"]["code"], -32601)
         self.assertEqual(bad_tool["error"]["code"], -32000)
 
