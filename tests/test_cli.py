@@ -138,6 +138,87 @@ class CliTests(unittest.TestCase):
             self.assertEqual(default_code, 0)
             self.assertIn("Primary coding AI: Codex", default_output)
 
+    def test_bootstrap_imports_processes_and_returns_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            transcript = root / "codex.jsonl"
+            transcript.write_text(
+                "\n".join(
+                    json.dumps(event)
+                    for event in [
+                        {
+                            "timestamp": "2026-06-29T00:00:00Z",
+                            "type": "session_meta",
+                            "payload": {"id": "bootstrap-session", "cwd": str(root / "project")},
+                        },
+                        {
+                            "timestamp": "2026-06-29T00:00:01Z",
+                            "type": "event_msg",
+                            "payload": {
+                                "type": "user_message",
+                                "message": "На русском. Need durable CLI token for memory.",
+                            },
+                        },
+                        {
+                            "timestamp": "2026-06-29T00:00:02Z",
+                            "type": "event_msg",
+                            "payload": {
+                                "type": "agent_message",
+                                "message": "Durable CLI token handled.",
+                            },
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            source_code, _ = self.run_cli(
+                [
+                    "--data-dir",
+                    tmp,
+                    "sources",
+                    "add",
+                    "codex",
+                    "--type",
+                    "codex",
+                    "--path",
+                    str(transcript),
+                ]
+            )
+            bootstrap_code, bootstrap_output = self.run_cli(
+                [
+                    "--data-dir",
+                    tmp,
+                    "bootstrap",
+                    "durable CLI token",
+                    "--cwd",
+                    str(root / "project"),
+                    "--json",
+                    "--summary-mode",
+                    "extractive",
+                    "--summary-limit",
+                    "1",
+                    "--import-limit",
+                    "10",
+                    "--all-sources",
+                ]
+            )
+
+            payload = json.loads(bootstrap_output)
+            self.assertEqual(source_code, 0)
+            self.assertEqual(bootstrap_code, 0)
+            self.assertEqual(payload["import"]["codex"]["imported"], 1)
+            self.assertEqual(payload["summaries"]["done"], 1)
+            self.assertTrue(payload["codex_only"])
+            self.assertFalse(payload["external_review_configured"])
+            self.assertEqual(payload["profile"]["project"], "project")
+            self.assertEqual(payload["profile"]["profile_kind"], "dynamic")
+            self.assertIn("User prefers Russian responses.", payload["profile"]["preferences"])
+            self.assertEqual(
+                payload["context"]["relevant_matches"][0]["session_id"],
+                "bootstrap-session",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

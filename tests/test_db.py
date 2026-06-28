@@ -73,7 +73,25 @@ class MemoryDBTests(unittest.TestCase):
                             "subject": "memory",
                             "text": "Project uses project-oriented memory context.",
                             "confidence": 0.9,
-                        }
+                        },
+                        {
+                            "scope": "user",
+                            "subject": "language_preference",
+                            "text": "User prefers Russian responses.",
+                            "confidence": 0.95,
+                        },
+                        {
+                            "scope": "project",
+                            "subject": "provider_preference",
+                            "text": "Codex remains the primary coding AI.",
+                            "confidence": 0.9,
+                        },
+                        {
+                            "scope": "workflow",
+                            "subject": "multi_agent_usage",
+                            "text": "Avoid spawning dashboard windows during background work.",
+                            "confidence": 0.85,
+                        },
                     ],
                 },
             )
@@ -85,13 +103,24 @@ class MemoryDBTests(unittest.TestCase):
             self.assertEqual(context["decisions"], ["Use Codex-only mode by default."])
             self.assertEqual(context["open_questions"], ["Should context be shown automatically?"])
             self.assertIn("Use Codex-only mode by default.", context["brief"])
-            self.assertEqual(context["observations"][0]["subject"], "memory")
+            self.assertIn("memory", {item["subject"] for item in context["observations"]})
             self.assertEqual(context["summaries"][0]["session_id"], "s1")
             self.assertEqual(context["relevant_matches"][0]["session_id"], "s1")
 
             nested_context = db.project_context(cwd=Path(tmp) / "demo" / "nested", limit=5)
             self.assertEqual(nested_context["project"], "demo")
             self.assertEqual(nested_context["session_count"], 1)
+
+            profile = db.project_profile(cwd=Path(tmp) / "demo" / "nested", limit=5)
+            self.assertEqual(profile["project"], "demo")
+            self.assertEqual(profile["profile_kind"], "dynamic")
+            self.assertIn("User prefers Russian responses.", profile["preferences"])
+            self.assertIn("Codex remains the primary coding AI.", profile["constraints"])
+            self.assertIn(
+                "Avoid spawning dashboard windows during background work.",
+                profile["warnings"],
+            )
+            self.assertIn("Dynamic project profile: demo", profile["brief"])
             db.close()
 
 

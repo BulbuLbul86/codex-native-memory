@@ -399,6 +399,78 @@ class MemoryDB:
             "relevant_matches": matches,
         }
 
+    def project_profile(
+        self,
+        *,
+        project: str | None = None,
+        cwd: str | Path | None = None,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        project_name = self._resolve_project(project=project, cwd=cwd)
+        session_count = self._project_session_count(project_name)
+        recent = self.recent_sessions(limit=min(max(limit, 1), 10), project=project_name)
+        summaries = self._project_summaries(project_name, limit=limit)
+        observations = self._project_observations(project_name, limit=max(limit * 3, 15))
+        decisions = _context_strings(
+            (decision for summary in summaries for decision in summary["decisions"]),
+            limit=max(limit, 6),
+        )
+        open_questions = _context_strings(
+            (question for summary in summaries for question in summary["open_questions"]),
+            limit=max(limit, 6),
+        )
+        preferences = _context_strings(
+            (
+                str(item["text"])
+                for item in observations
+                if _profile_observation_bucket(item) == "preference"
+            ),
+            limit=limit,
+        )
+        constraints = _context_strings(
+            (
+                str(item["text"])
+                for item in observations
+                if _profile_observation_bucket(item) == "constraint"
+            ),
+            limit=limit,
+        )
+        warnings = _context_strings(
+            (
+                str(item["text"])
+                for item in observations
+                if _profile_observation_bucket(item) == "warning"
+            ),
+            limit=limit,
+        )
+        observation_texts = _context_strings(
+            (str(item["text"]) for item in observations),
+            limit=limit,
+        )
+        return {
+            "project": project_name,
+            "session_count": session_count,
+            "profile_kind": "dynamic",
+            "updated_at": _latest_timestamp(recent, summaries, observations),
+            "brief": _profile_brief(
+                project=project_name,
+                session_count=session_count,
+                summaries=summaries,
+                decisions=decisions,
+                open_questions=open_questions,
+                preferences=preferences,
+                constraints=constraints,
+                warnings=warnings,
+            ),
+            "recent_activity": recent[:3],
+            "decisions": decisions,
+            "open_questions": open_questions,
+            "preferences": preferences,
+            "constraints": constraints,
+            "warnings": warnings,
+            "observations": observation_texts,
+        }
+
     def _search_messages(
         self, query: str, *, limit: int, role: str | None = None
     ) -> list[dict[str, Any]]:
@@ -743,6 +815,66 @@ def _context_brief(
     if matches:
         parts.append(f"Relevant matches: {len(matches)}.")
     return "\n".join(parts)
+
+
+def _profile_observation_bucket(item: dict[str, Any]) -> str | None:
+    scope = str(item.get("scope") or "").lower()
+    subject = str(item.get("subject") or "").lower()
+    text = str(item.get("text") or "").lower()
+    if "multi_agent" in subject or any(word in text for word in ("dashboard", "window", "окн")):
+        return "warning"
+    constraint_subjects = (
+        "provider",
+        "cross_chat",
+        "memory",
+        "review",
+        "coding",
+        "source",
+    )
+    if scope in {"project", "workflow"} or any(word in subject for word in constraint_subjects):
+        return "constraint"
+    if scope == "user" or "preference" in subject or "prefers" in text:
+        return "preference"
+    return None
+
+
+def _profile_brief(
+    *,
+    project: str | None,
+    session_count: int,
+    summaries: list[dict[str, Any]],
+    decisions: list[str],
+    open_questions: list[str],
+    preferences: list[str],
+    constraints: list[str],
+    warnings: list[str],
+) -> str:
+    parts = [f"Dynamic project profile: {project or 'all'} ({session_count} sessions)."]
+    if summaries:
+        parts.append(f"Latest: {_snippet(str(summaries[0]['summary']), limit=220)}")
+    if preferences:
+        parts.append("Preferences: " + "; ".join(preferences[:3]))
+    if constraints:
+        parts.append("Constraints: " + "; ".join(constraints[:3]))
+    if warnings:
+        parts.append("Warnings: " + "; ".join(warnings[:3]))
+    if decisions:
+        parts.append("Decisions: " + "; ".join(decisions[:3]))
+    if open_questions:
+        parts.append("Open questions: " + "; ".join(open_questions[:3]))
+    return "\n".join(parts)
+
+
+def _latest_timestamp(*collections: list[dict[str, Any]]) -> str | None:
+    values: list[str] = []
+    for collection in collections:
+        for item in collection:
+            for key in ("updated_at", "created_at", "started_at"):
+                value = item.get(key)
+                if value:
+                    values.append(str(value))
+                    break
+    return max(values) if values else None
 
 
 def _project_from_cwd(cwd: str | Path) -> str | None:

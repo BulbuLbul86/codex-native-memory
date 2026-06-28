@@ -1,6 +1,6 @@
 {
   "name": "codex-native-memory",
-  "version": "0.1.0+codex.20260628213227",
+  "version": "0.1.0+codex.20260628214429",
   "description": "Local cross-session memory for Codex Desktop and Codex CLI.",
   "author": {
     "name": "Codex Native Memory contributors"
@@ -16,11 +16,12 @@
       "MCP server",
       "Local SQLite index",
       "Project memory context",
+      "Project profile bootstrap",
       "Codex exec summaries",
       "External AI sources",
       "AI review targets"
     ],
-    "defaultPrompt": "Search my Codex memory for relevant context before answering."
+    "defaultPrompt": "Bootstrap my Codex project memory, then use relevant context before answering."
   },
   "mcpServers": "./.mcp.json"
 }

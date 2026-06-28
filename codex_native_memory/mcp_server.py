@@ -6,6 +6,7 @@ from dataclasses import asdict
 from typing import Any, BinaryIO
 
 from . import __version__
+from .bootstrap import bootstrap_memory
 from .db import MemoryDB
 from .ingest import backfill, backfill_configured_sources
 from .sources import load_sources, review_options
@@ -51,6 +52,32 @@ TOOLS: list[dict[str, Any]] = [
                 "project": {"type": "string"},
                 "cwd": {"type": "string"},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+            },
+        },
+    },
+    {
+        "name": "memory_bootstrap",
+        "description": (
+            "Import recent memory, summarize pending sessions, and return a dynamic "
+            "project profile plus project-oriented context."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "project": {"type": "string"},
+                "cwd": {"type": "string"},
+                "context_limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+                "import_limit": {"type": "integer", "minimum": 0, "maximum": 1000, "default": 100},
+                "summary_limit": {"type": "integer", "minimum": 0, "maximum": 100, "default": 5},
+                "summary_mode": {
+                    "type": "string",
+                    "enum": ["auto", "codex", "extractive"],
+                    "default": "extractive",
+                },
+                "force": {"type": "boolean", "default": False},
+                "source_id": {"type": "string"},
+                "all_sources": {"type": "boolean", "default": False},
             },
         },
     },
@@ -151,6 +178,21 @@ def call_tool(db: MemoryDB, params: dict[str, Any]) -> dict[str, Any]:
             query=_optional_string(arguments.get("query")),
             limit=limit,
         )
+    elif name == "memory_bootstrap":
+        payload = bootstrap_memory(
+            db,
+            data_root=db.path.parent,
+            project=_optional_string(arguments.get("project")),
+            cwd=_optional_string(arguments.get("cwd")),
+            query=_optional_string(arguments.get("query")),
+            context_limit=int(arguments.get("context_limit") or 5),
+            import_limit=_optional_int(arguments.get("import_limit"), default=100),
+            summary_limit=_optional_int(arguments.get("summary_limit"), default=5) or 0,
+            summary_mode=str(arguments.get("summary_mode") or "extractive"),
+            force=bool(arguments.get("force") or False),
+            source_id=_optional_string(arguments.get("source_id")),
+            all_sources=bool(arguments.get("all_sources") or False),
+        )
     elif name == "memory_import":
         raw_limit = arguments.get("limit")
         source_id = arguments.get("source_id")
@@ -223,3 +265,9 @@ def _error(request_id: Any, code: int, message: str) -> dict[str, Any]:
 def _optional_string(value: Any) -> str | None:
     text = str(value).strip() if value is not None else ""
     return text or None
+
+
+def _optional_int(value: Any, *, default: int | None = None) -> int | None:
+    if value is None:
+        return default
+    return int(value)

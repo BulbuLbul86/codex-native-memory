@@ -52,16 +52,39 @@ class McpServerTests(unittest.TestCase):
                     },
                 },
             )
+            bootstrap = handle_message(
+                db,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "memory_bootstrap",
+                        "arguments": {
+                            "project": "demo",
+                            "query": "MCP token",
+                            "import_limit": 0,
+                            "summary_limit": 0,
+                        },
+                    },
+                },
+            )
             db.close()
 
         tool_names = {tool["name"] for tool in tools["result"]["tools"]}
         payload = json.loads(search["result"]["content"][0]["text"])
         context_payload = json.loads(context["result"]["content"][0]["text"])
+        bootstrap_payload = json.loads(bootstrap["result"]["content"][0]["text"])
         self.assertIn("memory_context", tool_names)
+        self.assertIn("memory_bootstrap", tool_names)
         self.assertIn("memory_sources", tool_names)
         self.assertEqual(payload[0]["session_id"], "s1")
         self.assertEqual(context_payload["project"], "demo")
         self.assertEqual(context_payload["relevant_matches"][0]["session_id"], "s1")
+        self.assertEqual(bootstrap_payload["import"]["seen"], 0)
+        self.assertEqual(bootstrap_payload["summaries"]["seen"], 0)
+        self.assertEqual(bootstrap_payload["profile"]["project"], "demo")
+        self.assertEqual(bootstrap_payload["context"]["relevant_matches"][0]["session_id"], "s1")
 
     def test_sources_and_errors_are_reported_without_crashing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

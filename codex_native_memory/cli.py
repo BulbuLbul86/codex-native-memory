@@ -7,6 +7,7 @@ import time
 from dataclasses import asdict
 from typing import Any
 
+from .bootstrap import bootstrap_memory
 from .codex_provider import CodexProvider
 from .db import MemoryDB
 from .ingest import backfill, backfill_configured_sources
@@ -90,6 +91,31 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument("--limit", type=int, default=5)
     context.add_argument("--json", action="store_true")
     context.set_defaults(handler=cmd_context)
+
+    bootstrap = subcommands.add_parser(
+        "bootstrap",
+        help="Import recent memory, summarize queue, and return project profile/context.",
+    )
+    bootstrap.add_argument("query", nargs="?", default=None)
+    bootstrap.add_argument("--project")
+    bootstrap.add_argument("--cwd")
+    bootstrap.add_argument("--context-limit", type=int, default=5)
+    bootstrap.add_argument("--import-limit", type=int, default=100)
+    bootstrap.add_argument("--summary-limit", type=int, default=5)
+    bootstrap.add_argument(
+        "--summary-mode",
+        choices=["auto", "codex", "extractive"],
+        default="extractive",
+    )
+    bootstrap.add_argument("--force", action="store_true")
+    bootstrap.add_argument("--source", help="Import one configured source by id.")
+    bootstrap.add_argument(
+        "--all-sources",
+        action="store_true",
+        help="Import all configured sources. Codex stays the primary coding AI.",
+    )
+    bootstrap.add_argument("--json", action="store_true")
+    bootstrap.set_defaults(handler=cmd_bootstrap)
 
     process = subcommands.add_parser("process-queue", help="Summarize pending sessions.")
     process.add_argument("--limit", type=int, default=10)
@@ -251,6 +277,48 @@ def cmd_context(args: argparse.Namespace) -> int:
         _print_observations(payload["observations"])
         _print_summaries(payload["summaries"])
         _print_matches(payload["relevant_matches"])
+    db.close()
+    return 0
+
+
+def cmd_bootstrap(args: argparse.Namespace) -> int:
+    root = ensure_runtime_dirs(args.data_dir)
+    db = MemoryDB(root / "memory.sqlite3")
+    payload = bootstrap_memory(
+        db,
+        data_root=root,
+        project=args.project,
+        cwd=args.cwd,
+        query=args.query,
+        context_limit=args.context_limit,
+        import_limit=args.import_limit,
+        summary_limit=args.summary_limit,
+        summary_mode=args.summary_mode,
+        force=args.force,
+        source_id=args.source,
+        all_sources=args.all_sources,
+    )
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        profile = payload["profile"]
+        context = payload["context"]
+        print(f"Project: {profile.get('project') or 'all'}")
+        print(f"Profile: {profile['profile_kind']}")
+        print(f"Sessions: {profile['session_count']}")
+        print(f"Codex-only mode: {'yes' if payload['codex_only'] else 'no'}")
+        external_review = "yes" if payload["external_review_configured"] else "no"
+        print(f"External review configured: {external_review}")
+        print(f"Import: {payload['import']}")
+        print(f"Summaries: {payload['summaries']}")
+        print("\nProfile brief:")
+        print(profile["brief"])
+        _print_context_section("Preferences", profile["preferences"])
+        _print_context_section("Constraints", profile["constraints"])
+        _print_context_section("Warnings", profile["warnings"])
+        _print_context_section("Decisions", profile["decisions"])
+        _print_context_section("Open questions", profile["open_questions"])
+        _print_matches(context["relevant_matches"])
     db.close()
     return 0
 

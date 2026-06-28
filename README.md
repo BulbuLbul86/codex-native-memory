@@ -24,6 +24,8 @@ This is an MVP. It already supports:
 - SQLite storage with FTS5 search when available;
 - a stdio MCP server with search, import, recent sessions, and health tools;
 - project-oriented memory context with summaries, decisions, questions, and observations;
+- a dynamic project profile with preferences, constraints, warnings, and recent activity;
+- a bootstrap flow that imports recent memory, summarizes the queue, and returns context;
 - queue processing with extractive summaries;
 - optional AI summaries through `codex exec --ephemeral`;
 - optional configurable external sources through `sources.json`;
@@ -61,6 +63,7 @@ From this directory:
 ```powershell
 python -m codex_native_memory doctor
 python -m codex_native_memory init
+python -m codex_native_memory bootstrap "current task" --cwd "$PWD" --json
 python -m codex_native_memory backfill --limit 50
 python -m codex_native_memory context "current task" --cwd "$PWD" --limit 5
 python -m codex_native_memory search "VPN" --limit 5
@@ -90,6 +93,7 @@ backfill                     Import changed transcript JSONL files.
 watch                        Poll transcript files and import changes.
 search <query>               Search messages, summaries, and observations.
 context [query]              Build project-oriented memory context.
+bootstrap [query]            Import recent memory and return profile/context.
 process-queue                Summarize imported sessions.
 mcp                          Run the MCP stdio server.
 ```
@@ -102,6 +106,8 @@ Data defaults to `%USERPROFILE%\.codex-native-memory`. Override it with
 - `memory_search`: search imported conversations.
 - `memory_context`: build project-oriented context from recent sessions, summaries,
   decisions, open questions, observations, and optional query matches.
+- `memory_bootstrap`: import recent memory, process pending summaries, and return
+  a dynamic project profile plus `memory_context` output in one call.
 - `memory_recent`: list recent imported sessions.
 - `memory_import`: import changed Codex transcript files.
 - `memory_sources`: list attached sources and external review options.
