@@ -52,4 +52,6 @@ startup_timeout_sec = 60
 Set-Content -LiteralPath $ConfigPath -Value ($config.TrimEnd() + $block) -Encoding UTF8
 
 Write-Host "Codex Native Memory MCP entry installed."
+Write-Host "Codex remains the primary coding AI."
+Write-Host "To attach Claude/Gemini sources, run: .\scripts\configure-sources.ps1"
 Write-Host "Restart Codex to pick up the new MCP server."

@@ -8,11 +8,12 @@ CLI to summarize conversations. No Claude, Gemini, OpenRouter, or vendor API key
 is required. The summarizer uses the user's existing Codex/ChatGPT auth through
 `codex exec`.
 
-The architecture is project-centric rather than vendor-centric. Codex is the
-main development shell, but sessions are stored with `source_app` and
-`source_kind` metadata so future adapters can import Claude, Gemini, Cursor,
-Aider, or other AI transcripts into the same local memory without changing the
-MCP surface.
+The architecture is Codex-first and project-centric. Codex is the primary
+coding shell and the default coding AI. Claude, Gemini, Cursor, Aider, or other
+AI systems can attach as external sources or review targets. Imported sessions
+are stored with `source_app` and `source_kind` metadata so external transcripts
+flow into the same local project memory without taking over the main Codex
+workflow.
 
 ## Status
 
@@ -23,6 +24,8 @@ This is an MVP. It already supports:
 - a stdio MCP server with search, import, recent sessions, and health tools;
 - queue processing with extractive summaries;
 - optional AI summaries through `codex exec --ephemeral`;
+- configurable external sources through `sources.json`;
+- optional review targets for Claude, Gemini, or generic external AI checks;
 - a Codex plugin manifest and helper scripts.
 
 Planned adapter direction:
@@ -31,6 +34,20 @@ Planned adapter direction:
 - `claude`: local Claude transcript/history importer;
 - `gemini`: local Gemini CLI/project history importer;
 - `generic-jsonl`: user-supplied transcript folders mapped into the canonical schema.
+
+Codex always remains the default coding AI. Claude, Gemini, and other tools
+attach to it as memory sources or optional review targets:
+
+```powershell
+python -m codex_native_memory sources list
+python -m codex_native_memory sources add claude --type claude --path "$HOME\.claude\**\*.jsonl" --review-enabled
+python -m codex_native_memory sources add gemini --type gemini --path "$HOME\.gemini\**\*.jsonl" --review-enabled
+python -m codex_native_memory backfill --all-sources
+python -m codex_native_memory sources review-options
+```
+
+Before using external AI review, ask the user whether they want to check the
+new code only in Codex or also through configured review targets.
 
 ## Quick start
 
@@ -52,6 +69,12 @@ To expose it to Codex as MCP:
 
 Restart Codex after installing the MCP entry.
 
+To attach Claude/Gemini sources interactively:
+
+```powershell
+.\scripts\configure-sources.ps1
+```
+
 ## Commands
 
 ```text
@@ -72,6 +95,7 @@ Data defaults to `%USERPROFILE%\.codex-native-memory`. Override it with
 - `memory_search`: search imported conversations.
 - `memory_recent`: list recent imported sessions.
 - `memory_import`: import changed Codex transcript files.
+- `memory_sources`: list attached sources and external review options.
 - `memory_health`: show DB and provider health.
 
 Search results are intentionally normalized around sessions, messages,

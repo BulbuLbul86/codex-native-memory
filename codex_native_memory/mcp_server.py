@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import asdict
 from typing import Any, BinaryIO
 
 from . import __version__
 from .db import MemoryDB
-from .ingest import backfill
+from .ingest import backfill, backfill_configured_sources
+from .sources import load_sources, review_options
 
 TOOLS: list[dict[str, Any]] = [
     {
@@ -44,6 +46,22 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
                 "force": {"type": "boolean", "default": False},
+                "source_id": {"type": "string"},
+                "all_sources": {"type": "boolean", "default": False},
+            },
+        },
+    },
+    {
+        "name": "memory_sources",
+        "description": "List attached AI sources and external review targets.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "review-options"],
+                    "default": "list",
+                }
             },
         },
     },
@@ -109,12 +127,36 @@ def call_tool(db: MemoryDB, params: dict[str, Any]) -> dict[str, Any]:
         payload = db.recent_sessions(limit=limit)
     elif name == "memory_import":
         limit = arguments.get("limit")
-        payload = backfill(
-            db,
-            limit=int(limit) if limit is not None else None,
-            force=bool(arguments.get("force") or False),
-            data_root=db.path.parent,
-        )
+        source_id = arguments.get("source_id")
+        if source_id or bool(arguments.get("all_sources") or False):
+            payload = backfill_configured_sources(
+                db,
+                source_id=str(source_id) if source_id else None,
+                limit=int(limit) if limit is not None else None,
+                force=bool(arguments.get("force") or False),
+                data_root=db.path.parent,
+            )
+        else:
+            payload = backfill(
+                db,
+                limit=int(limit) if limit is not None else None,
+                force=bool(arguments.get("force") or False),
+                data_root=db.path.parent,
+            )
+    elif name == "memory_sources":
+        config = load_sources(db.path.parent)
+        action = str(arguments.get("action") or "list")
+        if action == "review-options":
+            payload = review_options(config)
+        else:
+            payload = {
+                "primary_coding_ai": (
+                    asdict(config.default_coding_source())
+                    if config.default_coding_source()
+                    else None
+                ),
+                "sources": [asdict(source) for source in config.sources],
+            }
     elif name == "memory_health":
         payload = db.stats()
     else:

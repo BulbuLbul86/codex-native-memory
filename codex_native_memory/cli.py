@@ -4,14 +4,25 @@ import argparse
 import json
 import sys
 import time
+from dataclasses import asdict
 from typing import Any
 
 from .codex_provider import CodexProvider
 from .db import MemoryDB
-from .ingest import backfill
+from .ingest import backfill, backfill_configured_sources
 from .mcp_server import serve
 from .paths import default_transcript_globs, ensure_runtime_dirs
 from .processor import Processor
+from .sources import (
+    SOURCE_TYPES,
+    SourceDefinition,
+    add_or_update_source,
+    load_sources,
+    remove_source,
+    review_options,
+    save_sources,
+    set_default_coding_source,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -47,6 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
     backfill_cmd.add_argument("--limit", type=int, default=None)
     backfill_cmd.add_argument("--force", action="store_true")
     backfill_cmd.add_argument("--glob", action="append", dest="patterns")
+    backfill_cmd.add_argument("--source", help="Import one configured source by id.")
+    backfill_cmd.add_argument(
+        "--all-sources",
+        action="store_true",
+        help="Import all configured sources. Codex stays the primary coding AI.",
+    )
     backfill_cmd.set_defaults(handler=cmd_backfill)
 
     watch = subcommands.add_parser("watch", help="Poll transcript files and import changes.")
@@ -70,6 +87,43 @@ def build_parser() -> argparse.ArgumentParser:
     process.add_argument("--limit", type=int, default=10)
     process.add_argument("--mode", choices=["auto", "codex", "extractive"], default="auto")
     process.set_defaults(handler=cmd_process_queue)
+
+    sources = subcommands.add_parser("sources", help="Manage attached AI sources.")
+    source_commands = sources.add_subparsers(dest="sources_command")
+
+    sources_list = source_commands.add_parser("list", help="List configured sources.")
+    sources_list.add_argument("--json", action="store_true")
+    sources_list.set_defaults(handler=cmd_sources_list)
+
+    sources_add = source_commands.add_parser("add", help="Add or update an external source.")
+    sources_add.add_argument("id")
+    sources_add.add_argument("--type", choices=sorted(SOURCE_TYPES), required=True)
+    sources_add.add_argument("--name")
+    sources_add.add_argument("--path", action="append", dest="paths")
+    sources_add.add_argument("--project")
+    sources_add.add_argument("--disabled", action="store_true")
+    sources_add.add_argument("--review-enabled", action="store_true")
+    sources_add.add_argument("--review-command")
+    sources_add.add_argument("--notes")
+    sources_add.set_defaults(handler=cmd_sources_add)
+
+    sources_remove = source_commands.add_parser("remove", help="Remove a configured source.")
+    sources_remove.add_argument("id")
+    sources_remove.set_defaults(handler=cmd_sources_remove)
+
+    sources_default = source_commands.add_parser(
+        "set-default",
+        help="Confirm/reset Codex as the primary coding AI.",
+    )
+    sources_default.add_argument("id", nargs="?", default="codex")
+    sources_default.set_defaults(handler=cmd_sources_set_default)
+
+    sources_review = source_commands.add_parser(
+        "review-options",
+        help="Show external AI review targets and the question to ask the user.",
+    )
+    sources_review.add_argument("--json", action="store_true")
+    sources_review.set_defaults(handler=cmd_sources_review_options)
 
     mcp = subcommands.add_parser("mcp", help="Run the MCP stdio server.")
     mcp.set_defaults(handler=cmd_mcp)
@@ -116,13 +170,22 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_backfill(args: argparse.Namespace) -> int:
     root = ensure_runtime_dirs(args.data_dir)
     db = MemoryDB(root / "memory.sqlite3")
-    stats = backfill(
-        db,
-        patterns=args.patterns,
-        limit=args.limit,
-        force=args.force,
-        data_root=root,
-    )
+    if args.source or args.all_sources:
+        stats = backfill_configured_sources(
+            db,
+            source_id=args.source,
+            limit=args.limit,
+            force=args.force,
+            data_root=root,
+        )
+    else:
+        stats = backfill(
+            db,
+            patterns=args.patterns,
+            limit=args.limit,
+            force=args.force,
+            data_root=root,
+        )
     print(json.dumps(stats, ensure_ascii=False, indent=2))
     db.close()
     return 0
@@ -164,6 +227,92 @@ def cmd_process_queue(args: argparse.Namespace) -> int:
     stats = Processor(db).process(limit=args.limit, mode=args.mode)
     print(json.dumps(stats, ensure_ascii=False, indent=2))
     db.close()
+    return 0
+
+
+def cmd_sources_list(args: argparse.Namespace) -> int:
+    config = load_sources(args.data_dir)
+    payload = [asdict(source) for source in config.sources]
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        default = config.default_coding_source()
+        print(f"Primary coding AI: {default.name if default else 'Codex'}")
+        for source in config.sources:
+            flags: list[str] = []
+            if source.default_for_coding:
+                flags.append("primary")
+            if source.review_enabled:
+                flags.append("review")
+            if not source.enabled:
+                flags.append("disabled")
+            suffix = f" ({', '.join(flags)})" if flags else ""
+            print(f"- {source.id}: {source.name} [{source.type}]{suffix}")
+    return 0
+
+
+def cmd_sources_add(args: argparse.Namespace) -> int:
+    config = load_sources(args.data_dir)
+    source = SourceDefinition(
+        id=args.id,
+        type=args.type,
+        name=args.name or args.id,
+        paths=args.paths or [],
+        project=args.project,
+        enabled=not args.disabled,
+        default_for_coding=args.id == "codex",
+        review_enabled=args.review_enabled and args.id != "codex",
+        review_command=args.review_command,
+        notes=args.notes,
+    )
+    add_or_update_source(config, source)
+    path = save_sources(config, args.data_dir)
+    print(f"Saved source '{source.id}' to {path}")
+    if source.id == "codex":
+        print("Codex is the primary coding AI.")
+    else:
+        print("Codex remains the primary coding AI. This source is attached to Codex.")
+    return 0
+
+
+def cmd_sources_remove(args: argparse.Namespace) -> int:
+    config = load_sources(args.data_dir)
+    if args.id == "codex":
+        path = save_sources(config, args.data_dir)
+        print("Codex is the primary coding AI and cannot be removed.")
+        print(f"Saved sources to {path}")
+        return 0
+    removed = remove_source(config, args.id)
+    path = save_sources(config, args.data_dir)
+    print(f"Removed source '{args.id}'." if removed else f"Source '{args.id}' was not found.")
+    print(f"Saved sources to {path}")
+    return 0
+
+
+def cmd_sources_set_default(args: argparse.Namespace) -> int:
+    config = load_sources(args.data_dir)
+    if not set_default_coding_source(config, args.id):
+        raise SystemExit(
+            "Codex is always the primary coding AI. External sources can only attach to it."
+        )
+    path = save_sources(config, args.data_dir)
+    default = config.default_coding_source()
+    print(f"Primary coding AI: {default.name if default else args.id}")
+    print(f"Saved sources to {path}")
+    return 0
+
+
+def cmd_sources_review_options(args: argparse.Namespace) -> int:
+    payload = review_options(load_sources(args.data_dir))
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        primary = payload.get("primary_coding_ai") or {}
+        print(f"Primary coding AI: {primary.get('name') or 'Codex'}")
+        print(payload["question"])
+        for target in payload["review_targets"]:
+            command = target.get("review_command") or "prompt-only"
+            print(f"- {target['id']}: {target['name']} ({command})")
     return 0
 
 
