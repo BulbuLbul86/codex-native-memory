@@ -61,10 +61,13 @@ def load_sources(root: str | Path | None = None) -> SourcesConfig:
     if not path.exists():
         return SourcesConfig(sources=[default_codex_source()])
 
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    raw_sources = payload.get("sources") if isinstance(payload, dict) else []
+    raw_payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = raw_payload if isinstance(raw_payload, dict) else {}
+    raw_sources = payload.get("sources")
+    if not isinstance(raw_sources, list):
+        raw_sources = []
     sources = [_source_from_dict(item) for item in raw_sources if isinstance(item, dict)]
-    version = int(payload.get("version", 1)) if isinstance(payload, dict) else 1
+    version = int(payload.get("version", 1))
     config = SourcesConfig(version=version, sources=sources)
     enforce_codex_primary(config)
     return config

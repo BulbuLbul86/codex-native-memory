@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
+import subprocess  # nosec B404
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -82,7 +82,8 @@ class CodexProvider:
                 command.extend(["--model", model])
             command.append("-")
 
-            completed = subprocess.run(
+            # Codex CLI is launched as a fixed argv list with shell=False.
+            completed = subprocess.run(  # nosec B603
                 command,
                 cwd=workdir,
                 input=prompt,

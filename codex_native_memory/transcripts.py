@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -49,7 +50,7 @@ class ParsedSession:
 def parse_jsonl_file(
     path: str | os.PathLike[str],
     *,
-    internal_roots: list[str | os.PathLike[str]] | None = None,
+    internal_roots: Sequence[str | os.PathLike[str]] | None = None,
 ) -> ParsedSession:
     transcript_path = Path(path)
     session_id: str | None = None
@@ -290,7 +291,7 @@ def _project_name(cwd: str | None) -> str | None:
     return name or cwd
 
 
-def _is_under_any(candidate: str | None, roots: list[str | os.PathLike[str]]) -> bool:
+def _is_under_any(candidate: str | None, roots: Sequence[str | os.PathLike[str]]) -> bool:
     if not candidate:
         return False
     normalized = os.path.normcase(os.path.abspath(os.path.expanduser(candidate)))

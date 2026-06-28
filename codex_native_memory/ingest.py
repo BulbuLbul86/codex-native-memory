@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import glob
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from pathlib import Path
 
 from .db import MemoryDB
@@ -15,7 +15,7 @@ from .transcripts import parse_jsonl_file
 def iter_transcript_files(
     patterns: Iterable[str] | None = None,
     *,
-    suffixes: frozenset[str] | None = frozenset({".jsonl"}),
+    suffixes: Collection[str] | None = frozenset({".jsonl"}),
 ) -> list[Path]:
     seen: set[Path] = set()
     files: list[Path] = []

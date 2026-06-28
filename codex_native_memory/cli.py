@@ -170,6 +170,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_backfill(args: argparse.Namespace) -> int:
     root = ensure_runtime_dirs(args.data_dir)
     db = MemoryDB(root / "memory.sqlite3")
+    stats: dict[str, Any]
     if args.source or args.all_sources:
         stats = backfill_configured_sources(
             db,

@@ -95,6 +95,7 @@ def handle_message(db: MemoryDB, message: dict[str, Any]) -> dict[str, Any] | No
     if method and method.startswith("notifications/"):
         return None
     try:
+        result: dict[str, Any]
         if method == "initialize":
             result = {
                 "protocolVersion": "2024-11-05",
@@ -117,6 +118,7 @@ def handle_message(db: MemoryDB, message: dict[str, Any]) -> dict[str, Any] | No
 def call_tool(db: MemoryDB, params: dict[str, Any]) -> dict[str, Any]:
     name = params.get("name")
     arguments = params.get("arguments") or {}
+    payload: Any
     if name == "memory_search":
         query = str(arguments.get("query") or "")
         limit = int(arguments.get("limit") or 10)
@@ -126,20 +128,20 @@ def call_tool(db: MemoryDB, params: dict[str, Any]) -> dict[str, Any]:
         limit = int(arguments.get("limit") or 10)
         payload = db.recent_sessions(limit=limit)
     elif name == "memory_import":
-        limit = arguments.get("limit")
+        raw_limit = arguments.get("limit")
         source_id = arguments.get("source_id")
         if source_id or bool(arguments.get("all_sources") or False):
             payload = backfill_configured_sources(
                 db,
                 source_id=str(source_id) if source_id else None,
-                limit=int(limit) if limit is not None else None,
+                limit=int(raw_limit) if raw_limit is not None else None,
                 force=bool(arguments.get("force") or False),
                 data_root=db.path.parent,
             )
         else:
             payload = backfill(
                 db,
-                limit=int(limit) if limit is not None else None,
+                limit=int(raw_limit) if raw_limit is not None else None,
                 force=bool(arguments.get("force") or False),
                 data_root=db.path.parent,
             )
@@ -149,12 +151,9 @@ def call_tool(db: MemoryDB, params: dict[str, Any]) -> dict[str, Any]:
         if action == "review-options":
             payload = review_options(config)
         else:
+            default_source = config.default_coding_source()
             payload = {
-                "primary_coding_ai": (
-                    asdict(config.default_coding_source())
-                    if config.default_coding_source()
-                    else None
-                ),
+                "primary_coding_ai": asdict(default_source) if default_source is not None else None,
                 "sources": [asdict(source) for source in config.sources],
             }
     elif name == "memory_health":

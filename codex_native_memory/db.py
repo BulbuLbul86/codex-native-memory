@@ -456,8 +456,8 @@ class MemoryDB:
         return [dict(row) for row in rows]
 
     def stats(self) -> dict[str, Any]:
-        def count(table: str) -> int:
-            row = self.conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()
+        def count(query: str) -> int:
+            row = self.conn.execute(query).fetchone()
             return int(row["count"])
 
         queue_rows = self.conn.execute(
@@ -469,10 +469,10 @@ class MemoryDB:
         return {
             "path": str(self.path),
             "fts_available": self.fts_available,
-            "sessions": count("sessions"),
-            "messages": count("messages"),
-            "summaries": count("session_summaries"),
-            "observations": count("observations"),
+            "sessions": count("SELECT COUNT(*) AS count FROM sessions"),
+            "messages": count("SELECT COUNT(*) AS count FROM messages"),
+            "summaries": count("SELECT COUNT(*) AS count FROM session_summaries"),
+            "observations": count("SELECT COUNT(*) AS count FROM observations"),
             "queue": {row["status"]: row["count"] for row in queue_rows},
             "sources": {row["source_app"]: row["count"] for row in source_rows},
         }
