@@ -139,6 +139,24 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "memory_update",
+        "description": "Update a pinned memory item by id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer", "minimum": 1},
+                "text": {"type": "string"},
+                "scope": {"type": "string", "enum": ["user", "project", "workflow"]},
+                "subject": {"type": "string"},
+                "project": {"type": "string"},
+                "cwd": {"type": "string"},
+                "source": {"type": "string"},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            },
+            "required": ["id"],
+        },
+    },
+    {
         "name": "memory_forget",
         "description": "Delete a pinned memory item by id.",
         "inputSchema": {
@@ -281,6 +299,17 @@ def call_tool(db: MemoryDB, params: dict[str, Any]) -> dict[str, Any]:
             scope=_optional_string(arguments.get("scope")),
             limit=int(arguments.get("limit") or 20),
         )
+    elif name == "memory_update":
+        payload = db.update_memory(
+            int(arguments.get("id") or 0),
+            text=_optional_string(arguments.get("text")),
+            scope=_optional_string(arguments.get("scope")),
+            subject=_optional_string(arguments.get("subject")),
+            project=_optional_string(arguments.get("project")),
+            cwd=_optional_string(arguments.get("cwd")),
+            source=_optional_string(arguments.get("source")),
+            confidence=_optional_float(arguments.get("confidence")),
+        )
     elif name == "memory_forget":
         memory_id = int(arguments.get("id") or 0)
         payload = {"id": memory_id, "deleted": db.forget_memory(memory_id)}
@@ -344,3 +373,9 @@ def _optional_int(value: Any, *, default: int | None = None) -> int | None:
     if value is None:
         return default
     return int(value)
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)

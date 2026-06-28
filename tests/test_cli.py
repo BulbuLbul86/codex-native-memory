@@ -236,6 +236,38 @@ class CliTests(unittest.TestCase):
                 ]
             )
             payload = json.loads(remember_output)
+            duplicate_code, duplicate_output = self.run_cli(
+                [
+                    "--data-dir",
+                    tmp,
+                    "remember",
+                    "Pinned CLI memory keeps Codex primary.",
+                    "--cwd",
+                    str(root / "project"),
+                    "--subject",
+                    "provider_preference",
+                    "--confidence",
+                    "0.7",
+                    "--json",
+                ]
+            )
+            duplicate_payload = json.loads(duplicate_output)
+            revise_code, revise_output = self.run_cli(
+                [
+                    "--data-dir",
+                    tmp,
+                    "revise",
+                    str(payload["id"]),
+                    "--text",
+                    "Pinned CLI memory now avoids duplicates.",
+                    "--scope",
+                    "user",
+                    "--subject",
+                    "language_preference",
+                    "--json",
+                ]
+            )
+            revised_payload = json.loads(revise_output)
             list_code, list_output = self.run_cli(
                 [
                     "--data-dir",
@@ -251,7 +283,7 @@ class CliTests(unittest.TestCase):
                     "--data-dir",
                     tmp,
                     "search",
-                    "Codex primary",
+                    "avoids duplicates",
                     "--kind",
                     "memories",
                     "--json",
@@ -274,6 +306,12 @@ class CliTests(unittest.TestCase):
             self.assertEqual(remember_code, 0)
             self.assertEqual(payload["project"], "project")
             self.assertEqual(payload["scope"], "project")
+            self.assertEqual(duplicate_code, 0)
+            self.assertEqual(duplicate_payload["id"], payload["id"])
+            self.assertEqual(duplicate_payload["confidence"], 0.7)
+            self.assertEqual(revise_code, 0)
+            self.assertEqual(revised_payload["scope"], "user")
+            self.assertIsNone(revised_payload["project"])
             self.assertEqual(list_code, 0)
             self.assertEqual(json.loads(list_output)[0]["id"], payload["id"])
             self.assertEqual(search_code, 0)

@@ -152,6 +152,18 @@ class MemoryDBTests(unittest.TestCase):
             results = db.search("primary coding AI", limit=5, kind="memories")
             deleted = db.forget_memory(project_memory["id"])
             remaining = db.memory_items(project="demo", limit=10)
+            duplicate = db.remember(
+                "Always answer in Russian for this user.",
+                scope="user",
+                subject="language_preference",
+                confidence=0.5,
+            )
+            updated_warning = db.update_memory(
+                warning_memory["id"],
+                text="Avoid dashboard windows unless the user explicitly asks for them.",
+                scope="user",
+                subject="workflow_preference",
+            )
 
             self.assertIsNone(user_memory["project"])
             self.assertEqual(project_memory["project"], "demo")
@@ -167,6 +179,11 @@ class MemoryDBTests(unittest.TestCase):
             self.assertEqual(results[0]["memory_id"], project_memory["id"])
             self.assertTrue(deleted)
             self.assertNotIn(project_memory["id"], {item["id"] for item in remaining})
+            self.assertEqual(duplicate["id"], user_memory["id"])
+            self.assertEqual(duplicate["confidence"], 0.5)
+            self.assertEqual(updated_warning["scope"], "user")
+            self.assertIsNone(updated_warning["project"])
+            self.assertIn("explicitly asks", updated_warning["text"])
             db.close()
 
 

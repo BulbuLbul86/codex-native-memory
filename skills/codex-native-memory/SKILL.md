@@ -27,7 +27,9 @@ Preferred flow:
    or project fact, call `memory_remember`. Use `scope=user` for global user
    preferences, `scope=project` for project facts, and `scope=workflow` for
    process guardrails. Use `memory_notes` to inspect stored items and
-   `memory_forget` to delete a bad item by id.
+   `memory_update` to fix an item by id. Use `memory_forget` to delete a bad
+   item by id. Re-remembering the same scoped subject/text updates the existing
+   item instead of creating a duplicate.
 5. If MCP is not available but this repository is accessible, run:
 
    ```powershell

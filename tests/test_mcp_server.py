@@ -56,6 +56,23 @@ class McpServerTests(unittest.TestCase):
                     },
                 },
             )
+            memory_id = json.loads(remember["result"]["content"][0]["text"])["id"]
+            update = handle_message(
+                db,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 8,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "memory_update",
+                        "arguments": {
+                            "id": memory_id,
+                            "text": "Pinned MCP memory keeps Codex primary and editable.",
+                            "confidence": 0.8,
+                        },
+                    },
+                },
+            )
             notes = handle_message(
                 db,
                 {
@@ -97,7 +114,6 @@ class McpServerTests(unittest.TestCase):
                     },
                 },
             )
-            memory_id = json.loads(remember["result"]["content"][0]["text"])["id"]
             forget = handle_message(
                 db,
                 {
@@ -115,6 +131,7 @@ class McpServerTests(unittest.TestCase):
         tool_names = {tool["name"] for tool in tools["result"]["tools"]}
         payload = json.loads(search["result"]["content"][0]["text"])
         remember_payload = json.loads(remember["result"]["content"][0]["text"])
+        update_payload = json.loads(update["result"]["content"][0]["text"])
         notes_payload = json.loads(notes["result"]["content"][0]["text"])
         context_payload = json.loads(context["result"]["content"][0]["text"])
         bootstrap_payload = json.loads(bootstrap["result"]["content"][0]["text"])
@@ -123,10 +140,14 @@ class McpServerTests(unittest.TestCase):
         self.assertIn("memory_bootstrap", tool_names)
         self.assertIn("memory_remember", tool_names)
         self.assertIn("memory_notes", tool_names)
+        self.assertIn("memory_update", tool_names)
         self.assertIn("memory_forget", tool_names)
         self.assertIn("memory_sources", tool_names)
         self.assertEqual(payload[0]["session_id"], "s1")
         self.assertEqual(remember_payload["project"], "demo")
+        self.assertEqual(update_payload["id"], remember_payload["id"])
+        self.assertEqual(update_payload["confidence"], 0.8)
+        self.assertIn("editable", update_payload["text"])
         self.assertEqual(notes_payload[0]["id"], remember_payload["id"])
         self.assertEqual(context_payload["project"], "demo")
         self.assertEqual(context_payload["memories"][0]["id"], remember_payload["id"])

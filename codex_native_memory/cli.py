@@ -149,6 +149,18 @@ def build_parser() -> argparse.ArgumentParser:
     forget.add_argument("--json", action="store_true")
     forget.set_defaults(handler=cmd_forget)
 
+    revise = subcommands.add_parser("revise", help="Update a pinned memory item by id.")
+    revise.add_argument("id", type=int)
+    revise.add_argument("--text")
+    revise.add_argument("--scope", choices=["user", "project", "workflow"])
+    revise.add_argument("--subject")
+    revise.add_argument("--project")
+    revise.add_argument("--cwd")
+    revise.add_argument("--source")
+    revise.add_argument("--confidence", type=float)
+    revise.add_argument("--json", action="store_true")
+    revise.set_defaults(handler=cmd_revise)
+
     process = subcommands.add_parser("process-queue", help="Summarize pending sessions.")
     process.add_argument("--limit", type=int, default=10)
     process.add_argument("--mode", choices=["auto", "codex", "extractive"], default="auto")
@@ -406,6 +418,27 @@ def cmd_forget(args: argparse.Namespace) -> int:
         print(f"{status}: memory #{args.id}")
     db.close()
     return 0 if deleted else 1
+
+
+def cmd_revise(args: argparse.Namespace) -> int:
+    root = ensure_runtime_dirs(args.data_dir)
+    db = MemoryDB(root / "memory.sqlite3")
+    payload = db.update_memory(
+        args.id,
+        text=args.text,
+        scope=args.scope,
+        subject=args.subject,
+        project=args.project,
+        cwd=args.cwd,
+        source=args.source,
+        confidence=args.confidence,
+    )
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"Updated memory #{payload['id']}: {payload['text']}")
+    db.close()
+    return 0
 
 
 def cmd_process_queue(args: argparse.Namespace) -> int:

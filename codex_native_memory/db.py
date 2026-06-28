@@ -379,6 +379,19 @@ class MemoryDB:
         project_name = self._memory_target_project(scope=clean_scope, project=project, cwd=cwd)
         cwd_text = _memory_cwd(cwd)
         now = utc_now()
+        existing_id = self._matching_memory_id(
+            scope=clean_scope,
+            subject=clean_subject,
+            text=clean_text,
+            project=project_name,
+        )
+        if existing_id is not None:
+            return self.update_memory(
+                existing_id,
+                cwd=cwd_text,
+                source=clean_source,
+                confidence=confidence,
+            )
         with self.conn:
             cursor = self.conn.execute(
                 """
@@ -418,6 +431,78 @@ class MemoryDB:
         if row is None:
             raise ValueError(f"Memory item not found: {memory_id}")
         return _memory_item_dict(row)
+
+    def update_memory(
+        self,
+        memory_id: int,
+        *,
+        text: str | None = None,
+        scope: str | None = None,
+        subject: str | None = None,
+        project: str | None = None,
+        cwd: str | Path | None = None,
+        source: str | None = None,
+        confidence: float | None = None,
+    ) -> dict[str, Any]:
+        current = self.memory_item(memory_id)
+        clean_scope = _normalize_scope(scope) if scope else str(current["scope"])
+        clean_text = _clean_memory_text(text) if text is not None else str(current["text"])
+        if not clean_text:
+            raise ValueError("Memory text cannot be empty.")
+        clean_subject = (
+            _clean_memory_label(subject, default="general")
+            if subject is not None
+            else str(current["subject"])
+        )
+        clean_source = (
+            _clean_memory_label(source, default="manual")
+            if source is not None
+            else str(current["source"])
+        )
+        if clean_scope == "user" and project is None:
+            project_name = None
+        elif project is not None or cwd is not None or scope is not None:
+            project_name = self._memory_target_project(
+                scope=clean_scope,
+                project=project if project is not None else current.get("project"),
+                cwd=cwd if cwd is not None else current.get("cwd"),
+            )
+        else:
+            project_name = current.get("project")
+        cwd_text = _memory_cwd(cwd) if cwd is not None else current.get("cwd")
+        confidence_value = (
+            min(max(float(confidence), 0.0), 1.0)
+            if confidence is not None
+            else float(current["confidence"])
+        )
+        with self.conn:
+            self.conn.execute(
+                """
+                UPDATE memory_items
+                SET
+                  scope = ?,
+                  subject = ?,
+                  text = ?,
+                  project = ?,
+                  cwd = ?,
+                  source = ?,
+                  confidence = ?,
+                  updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    clean_scope,
+                    clean_subject,
+                    clean_text,
+                    project_name,
+                    cwd_text,
+                    clean_source,
+                    confidence_value,
+                    utc_now(),
+                    memory_id,
+                ),
+            )
+        return self.memory_item(memory_id)
 
     def memory_items(
         self,
@@ -692,6 +777,32 @@ class MemoryDB:
             }
             for row in rows
         ]
+
+    def _matching_memory_id(
+        self,
+        *,
+        scope: str,
+        subject: str,
+        text: str,
+        project: str | None,
+    ) -> int | None:
+        row = self.conn.execute(
+            """
+            SELECT id
+            FROM memory_items
+            WHERE scope = ?
+              AND subject = ?
+              AND text = ?
+              AND (
+                (project IS NULL AND ? IS NULL)
+                OR project = ?
+              )
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (scope, subject, text, project, project),
+        ).fetchone()
+        return int(row["id"]) if row else None
 
     def recent_sessions(
         self,
