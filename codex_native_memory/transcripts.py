@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
 import os
-from pathlib import Path
 import re
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -34,6 +34,8 @@ class ParsedToolEvent:
 class ParsedSession:
     session_id: str
     source_path: str
+    source_app: str = "codex"
+    source_kind: str = "codex-jsonl"
     title: str | None = None
     cwd: str | None = None
     project: str | None = None
@@ -197,6 +199,8 @@ def parse_jsonl_file(
     return ParsedSession(
         session_id=final_session_id,
         source_path=str(transcript_path.resolve()),
+        source_app="codex",
+        source_kind="codex-jsonl",
         title=title,
         cwd=cwd,
         project=project,

@@ -8,7 +8,6 @@ from . import __version__
 from .db import MemoryDB
 from .ingest import backfill
 
-
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "memory_search",
@@ -56,7 +55,11 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 
-def serve(db: MemoryDB | None = None, stdin: BinaryIO | None = None, stdout: BinaryIO | None = None) -> None:
+def serve(
+    db: MemoryDB | None = None,
+    stdin: BinaryIO | None = None,
+    stdout: BinaryIO | None = None,
+) -> None:
     database = db or MemoryDB()
     transport = StdioTransport(stdin or sys.stdin.buffer, stdout or sys.stdout.buffer)
     while True:
@@ -116,7 +119,8 @@ def call_tool(db: MemoryDB, params: dict[str, Any]) -> dict[str, Any]:
         payload = db.stats()
     else:
         raise ValueError(f"Unknown tool: {name}")
-    return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)}]}
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    return {"content": [{"type": "text", "text": text}]}
 
 
 class StdioTransport:

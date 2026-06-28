@@ -10,7 +10,7 @@ from .codex_provider import CodexProvider
 from .db import MemoryDB
 from .ingest import backfill
 from .mcp_server import serve
-from .paths import data_dir, default_transcript_globs, ensure_runtime_dirs
+from .paths import default_transcript_globs, ensure_runtime_dirs
 from .processor import Processor
 
 
@@ -93,7 +93,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     else:
         print(f"Data dir: {payload['data_dir']}")
         print(f"Codex CLI: {payload['codex_cli'] or 'not found'}")
-        print(f"Codex provider: {'available' if payload['codex_provider_available'] else 'unavailable'}")
+        provider_status = "available" if payload["codex_provider_available"] else "unavailable"
+        print(f"Codex provider: {provider_status}")
         print(f"Database: {payload['db']['path']}")
         print(f"Sessions: {payload['db']['sessions']}")
         print(f"Messages: {payload['db']['messages']}")

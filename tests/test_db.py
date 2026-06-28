@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from codex_native_memory.db import MemoryDB
 from codex_native_memory.transcripts import ParsedMessage, ParsedSession
@@ -15,12 +15,16 @@ class MemoryDBTests(unittest.TestCase):
             parsed = ParsedSession(
                 session_id="s1",
                 source_path=str(Path(tmp) / "s1.jsonl"),
+                source_app="codex",
+                source_kind="codex-jsonl",
                 title="VPN setup",
                 cwd=str(Path(tmp)),
                 project="tmp",
                 messages=[
                     ParsedMessage("s1", 0, "user", "user_message", "Need VPN setup", None),
-                    ParsedMessage("s1", 1, "assistant", "agent_message", "Configured WireGuard", None),
+                    ParsedMessage(
+                        "s1", 1, "assistant", "agent_message", "Configured WireGuard", None
+                    ),
                 ],
             )
             db.replace_session(parsed, source_mtime=1.0)
@@ -32,6 +36,7 @@ class MemoryDBTests(unittest.TestCase):
             self.assertEqual(stats["sessions"], 1)
             self.assertEqual(stats["messages"], 2)
             self.assertEqual(stats["queue"]["pending"], 1)
+            self.assertEqual(stats["sources"]["codex"], 1)
             db.close()
 
 

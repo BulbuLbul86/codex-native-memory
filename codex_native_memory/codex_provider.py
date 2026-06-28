@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import tempfile
+from pathlib import Path
 from typing import Any
 
 from .paths import ENV_CODEX, ensure_runtime_dirs, internal_workdir
-
 
 SUMMARY_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -54,7 +53,10 @@ class CodexProvider:
         workdir = internal_workdir(self.root)
         workdir.mkdir(parents=True, exist_ok=True)
 
-        with tempfile.TemporaryDirectory(prefix="codex-native-memory-", dir=self.root / "tmp") as tmp:
+        with tempfile.TemporaryDirectory(
+            prefix="codex-native-memory-",
+            dir=self.root / "tmp",
+        ) as tmp:
             tmp_path = Path(tmp)
             schema_path = tmp_path / "schema.json"
             output_path = tmp_path / "summary.json"
@@ -78,19 +80,23 @@ class CodexProvider:
             model = os.environ.get("CODEX_NATIVE_MEMORY_MODEL")
             if model:
                 command.extend(["--model", model])
-            command.append(prompt)
+            command.append("-")
 
             completed = subprocess.run(
                 command,
                 cwd=workdir,
+                input=prompt,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 capture_output=True,
                 timeout=self.timeout_seconds,
                 check=False,
             )
             if completed.returncode != 0:
                 detail = (completed.stderr or completed.stdout or "").strip()
-                raise RuntimeError(f"codex exec failed with exit code {completed.returncode}: {detail}")
+                message = f"codex exec failed with exit code {completed.returncode}"
+                raise RuntimeError(f"{message}: {detail}")
             raw = output_path.read_text(encoding="utf-8", errors="replace")
             return parse_json_response(raw)
 
@@ -119,7 +125,8 @@ def build_summary_prompt(session_id: str, messages: list[dict[str, Any]]) -> str
         "Summarize the imported Codex conversation for later retrieval. "
         "Return strict JSON matching the provided schema. "
         "Write concise English facts even if the conversation is in another language. "
-        "Only store durable project/user preferences, decisions, constraints, and unresolved tasks. "
+        "Only store durable project/user preferences, decisions, constraints, "
+        "and unresolved tasks. "
         "Do not include secrets, credentials, tokens, or long verbatim source text.\n\n"
         f"Session id: {session_id}\n\n"
         f"Transcript:\n{transcript}"

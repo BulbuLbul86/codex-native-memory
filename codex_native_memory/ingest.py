@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import glob
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from .db import MemoryDB
 from .paths import data_dir as default_data_dir

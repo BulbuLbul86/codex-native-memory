@@ -8,6 +8,12 @@ CLI to summarize conversations. No Claude, Gemini, OpenRouter, or vendor API key
 is required. The summarizer uses the user's existing Codex/ChatGPT auth through
 `codex exec`.
 
+The architecture is project-centric rather than vendor-centric. Codex is the
+main development shell, but sessions are stored with `source_app` and
+`source_kind` metadata so future adapters can import Claude, Gemini, Cursor,
+Aider, or other AI transcripts into the same local memory without changing the
+MCP surface.
+
 ## Status
 
 This is an MVP. It already supports:
@@ -18,6 +24,13 @@ This is an MVP. It already supports:
 - queue processing with extractive summaries;
 - optional AI summaries through `codex exec --ephemeral`;
 - a Codex plugin manifest and helper scripts.
+
+Planned adapter direction:
+
+- `codex`: current `~/.codex/sessions/**/*.jsonl` importer;
+- `claude`: local Claude transcript/history importer;
+- `gemini`: local Gemini CLI/project history importer;
+- `generic-jsonl`: user-supplied transcript folders mapped into the canonical schema.
 
 ## Quick start
 
@@ -60,6 +73,10 @@ Data defaults to `%USERPROFILE%\.codex-native-memory`. Override it with
 - `memory_recent`: list recent imported sessions.
 - `memory_import`: import changed Codex transcript files.
 - `memory_health`: show DB and provider health.
+
+Search results are intentionally normalized around sessions, messages,
+summaries, and observations. External adapters should write into the same shape
+and keep their original source path/source app metadata for traceability.
 
 ## Provider behavior
 

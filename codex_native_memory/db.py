@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 import json
-from pathlib import Path
 import re
 import sqlite3
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from .paths import db_path, ensure_runtime_dirs
@@ -39,6 +39,8 @@ class MemoryDB:
             CREATE TABLE IF NOT EXISTS sessions (
               id TEXT PRIMARY KEY,
               source_path TEXT UNIQUE NOT NULL,
+              source_app TEXT NOT NULL DEFAULT 'codex',
+              source_kind TEXT NOT NULL DEFAULT 'codex-jsonl',
               title TEXT,
               cwd TEXT,
               project TEXT,
@@ -103,7 +105,22 @@ class MemoryDB:
             );
             """
         )
+        self._ensure_columns(
+            "sessions",
+            {
+                "source_app": "TEXT NOT NULL DEFAULT 'codex'",
+                "source_kind": "TEXT NOT NULL DEFAULT 'codex-jsonl'",
+            },
+        )
         self.fts_available = self._ensure_fts()
+
+    def _ensure_columns(self, table: str, columns: dict[str, str]) -> None:
+        existing = {
+            row["name"] for row in self.conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        for name, definition in columns.items():
+            if name not in existing:
+                self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
     def _ensure_fts(self) -> bool:
         try:
@@ -129,12 +146,15 @@ class MemoryDB:
             self.conn.execute(
                 """
                 INSERT INTO sessions (
-                  id, source_path, title, cwd, project, started_at, updated_at,
+                  id, source_path, source_app, source_kind, title, cwd,
+                  project, started_at, updated_at,
                   last_imported_mtime, internal
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                   source_path = excluded.source_path,
+                  source_app = excluded.source_app,
+                  source_kind = excluded.source_kind,
                   title = excluded.title,
                   cwd = excluded.cwd,
                   project = excluded.project,
@@ -146,6 +166,8 @@ class MemoryDB:
                 (
                     parsed.session_id,
                     parsed.source_path,
+                    parsed.source_app,
+                    parsed.source_kind,
                     parsed.title,
                     parsed.cwd,
                     parsed.project,
@@ -158,7 +180,9 @@ class MemoryDB:
             self.conn.execute("DELETE FROM messages WHERE session_id = ?", (parsed.session_id,))
             self.conn.execute("DELETE FROM tool_events WHERE session_id = ?", (parsed.session_id,))
             if self.fts_available:
-                self.conn.execute("DELETE FROM messages_fts WHERE session_id = ?", (parsed.session_id,))
+                self.conn.execute(
+                    "DELETE FROM messages_fts WHERE session_id = ?", (parsed.session_id,)
+                )
 
             self.conn.executemany(
                 """
@@ -212,7 +236,9 @@ class MemoryDB:
             if parsed.messages and not parsed.internal:
                 self.conn.execute(
                     """
-                    INSERT INTO queue(session_id, kind, status, attempts, error, created_at, updated_at)
+                    INSERT INTO queue(
+                      session_id, kind, status, attempts, error, created_at, updated_at
+                    )
                     VALUES (?, 'summary', 'pending', 0, NULL, ?, ?)
                     ON CONFLICT(session_id, kind) DO UPDATE SET
                       status = CASE
@@ -418,7 +444,9 @@ class MemoryDB:
     def recent_sessions(self, *, limit: int = 10) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             """
-            SELECT id, title, cwd, project, started_at, updated_at, internal
+            SELECT
+              id, source_app, source_kind, title, cwd, project,
+              started_at, updated_at, internal
             FROM sessions
             ORDER BY COALESCE(updated_at, started_at) DESC
             LIMIT ?
@@ -435,6 +463,9 @@ class MemoryDB:
         queue_rows = self.conn.execute(
             "SELECT status, COUNT(*) AS count FROM queue GROUP BY status"
         ).fetchall()
+        source_rows = self.conn.execute(
+            "SELECT source_app, COUNT(*) AS count FROM sessions GROUP BY source_app"
+        ).fetchall()
         return {
             "path": str(self.path),
             "fts_available": self.fts_available,
@@ -443,6 +474,7 @@ class MemoryDB:
             "summaries": count("session_summaries"),
             "observations": count("observations"),
             "queue": {row["status"]: row["count"] for row in queue_rows},
+            "sources": {row["source_app"]: row["count"] for row in source_rows},
         }
 
 

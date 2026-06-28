@@ -30,12 +30,12 @@ if (Test-Path -LiteralPath $ConfigPath) {
 
 $config = [regex]::Replace(
   $config,
-  "(?ms)^`[mcp_servers\.codex_native_memory`].*?(?=^\[|\z)",
+  '(?ms)^\[mcp_servers\.codex_native_memory\].*?(?=^\[|\z)',
   ""
 )
 $config = [regex]::Replace(
   $config,
-  "(?ms)^`[mcp_servers\.codex_native_memory\.env`].*?(?=^\[|\z)",
+  '(?ms)^\[mcp_servers\.codex_native_memory\.env\].*?(?=^\[|\z)',
   ""
 )
 

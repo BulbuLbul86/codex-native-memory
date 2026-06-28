@@ -87,12 +87,17 @@ def infer_observations(text: str) -> list[dict[str, Any]]:
                 "confidence": 0.95,
             }
         )
-    if "кодекс" in lowered and ("claude" in lowered or "gemini" in lowered or "openrouter" in lowered):
+    if "кодекс" in lowered and (
+        "claude" in lowered or "gemini" in lowered or "openrouter" in lowered
+    ):
         observations.append(
             {
                 "scope": "project",
                 "subject": "provider_preference",
-                "text": "User wants Codex-native tooling without Claude, Gemini, or OpenRouter dependencies.",
+                "text": (
+                    "User wants Codex-native tooling without Claude, Gemini, "
+                    "or OpenRouter dependencies."
+                ),
                 "confidence": 0.9,
             }
         )
@@ -101,7 +106,10 @@ def infer_observations(text: str) -> list[dict[str, Any]]:
             {
                 "scope": "workflow",
                 "subject": "multi_agent_usage",
-                "text": "Avoid spawning multi-agent dashboards unless the user explicitly accepts that UI noise.",
+                "text": (
+                    "Avoid spawning multi-agent dashboards unless the user explicitly "
+                    "accepts that UI noise."
+                ),
                 "confidence": 0.85,
             }
         )
@@ -110,7 +118,10 @@ def infer_observations(text: str) -> list[dict[str, Any]]:
             {
                 "scope": "project",
                 "subject": "cross_chat_memory",
-                "text": "Cross-chat project continuity is important because work is spread across multiple Codex threads.",
+                "text": (
+                    "Cross-chat project continuity is important because work is spread "
+                    "across multiple Codex threads."
+                ),
                 "confidence": 0.85,
             }
         )
