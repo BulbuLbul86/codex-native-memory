@@ -114,6 +114,19 @@ class McpServerTests(unittest.TestCase):
                     },
                 },
             )
+            exported = handle_message(
+                db,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 9,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "memory_export",
+                        "arguments": {"project": "demo", "limit": 10},
+                    },
+                },
+            )
+            exported_payload = json.loads(exported["result"]["content"][0]["text"])
             forget = handle_message(
                 db,
                 {
@@ -126,23 +139,56 @@ class McpServerTests(unittest.TestCase):
                     },
                 },
             )
+            imported = handle_message(
+                db,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 10,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "memory_import_bundle",
+                        "arguments": {"payload": exported_payload, "project": "demo"},
+                    },
+                },
+            )
+            restored_notes = handle_message(
+                db,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 11,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "memory_notes",
+                        "arguments": {"project": "demo"},
+                    },
+                },
+            )
             db.close()
 
         tool_names = {tool["name"] for tool in tools["result"]["tools"]}
+        import_tool = next(
+            tool for tool in tools["result"]["tools"] if tool["name"] == "memory_import_bundle"
+        )
         payload = json.loads(search["result"]["content"][0]["text"])
         remember_payload = json.loads(remember["result"]["content"][0]["text"])
         update_payload = json.loads(update["result"]["content"][0]["text"])
         notes_payload = json.loads(notes["result"]["content"][0]["text"])
         context_payload = json.loads(context["result"]["content"][0]["text"])
         bootstrap_payload = json.loads(bootstrap["result"]["content"][0]["text"])
+        exported_payload = json.loads(exported["result"]["content"][0]["text"])
         forget_payload = json.loads(forget["result"]["content"][0]["text"])
+        imported_payload = json.loads(imported["result"]["content"][0]["text"])
+        restored_notes_payload = json.loads(restored_notes["result"]["content"][0]["text"])
         self.assertIn("memory_context", tool_names)
         self.assertIn("memory_bootstrap", tool_names)
         self.assertIn("memory_remember", tool_names)
         self.assertIn("memory_notes", tool_names)
         self.assertIn("memory_update", tool_names)
+        self.assertIn("memory_export", tool_names)
+        self.assertIn("memory_import_bundle", tool_names)
         self.assertIn("memory_forget", tool_names)
         self.assertIn("memory_sources", tool_names)
+        self.assertIn("anyOf", import_tool["inputSchema"])
         self.assertEqual(payload[0]["session_id"], "s1")
         self.assertEqual(remember_payload["project"], "demo")
         self.assertEqual(update_payload["id"], remember_payload["id"])
@@ -157,7 +203,11 @@ class McpServerTests(unittest.TestCase):
         self.assertEqual(bootstrap_payload["profile"]["project"], "demo")
         self.assertEqual(bootstrap_payload["profile"]["memories"][0]["id"], remember_payload["id"])
         self.assertEqual(bootstrap_payload["context"]["relevant_matches"][0]["session_id"], "s1")
+        self.assertEqual(exported_payload["version"], 1)
+        self.assertEqual(exported_payload["memories"][0]["id"], remember_payload["id"])
         self.assertTrue(forget_payload["deleted"])
+        self.assertEqual(imported_payload["imported"], 1)
+        self.assertEqual(restored_notes_payload[0]["text"], update_payload["text"])
 
     def test_sources_and_errors_are_reported_without_crashing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

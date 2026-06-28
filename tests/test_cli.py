@@ -321,6 +321,84 @@ class CliTests(unittest.TestCase):
             self.assertEqual(after_code, 0)
             self.assertEqual(json.loads(after_output), [])
 
+    def test_memory_export_import_cli_round_trips_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_data = root / "source-data"
+            target_data = root / "target-data"
+            export_path = root / "memory-export.json"
+
+            remember_code, _ = self.run_cli(
+                [
+                    "--data-dir",
+                    str(source_data),
+                    "remember",
+                    "CLI export memory survives round trip.",
+                    "--cwd",
+                    str(root / "project"),
+                    "--subject",
+                    "portability",
+                ]
+            )
+            export_code, export_output = self.run_cli(
+                [
+                    "--data-dir",
+                    str(source_data),
+                    "export",
+                    "--cwd",
+                    str(root / "project"),
+                    "--output",
+                    str(export_path),
+                ]
+            )
+            import_code, import_output = self.run_cli(
+                [
+                    "--data-dir",
+                    str(target_data),
+                    "import",
+                    str(export_path),
+                    "--project",
+                    "imported",
+                    "--json",
+                ]
+            )
+            reimport_code, reimport_output = self.run_cli(
+                [
+                    "--data-dir",
+                    str(target_data),
+                    "import",
+                    str(export_path),
+                    "--project",
+                    "imported",
+                    "--json",
+                ]
+            )
+            list_code, list_output = self.run_cli(
+                [
+                    "--data-dir",
+                    str(target_data),
+                    "memories",
+                    "--project",
+                    "imported",
+                    "--json",
+                ]
+            )
+
+            imported = json.loads(import_output)
+            reimported = json.loads(reimport_output)
+            items = json.loads(list_output)
+            self.assertEqual(remember_code, 0)
+            self.assertEqual(export_code, 0)
+            self.assertTrue(export_path.exists())
+            self.assertIn("Saved memory export", export_output)
+            self.assertEqual(import_code, 0)
+            self.assertEqual(imported["imported"], 1)
+            self.assertEqual(reimport_code, 0)
+            self.assertEqual(reimported["updated"], 1)
+            self.assertEqual(list_code, 0)
+            self.assertEqual(items[0]["project"], "imported")
+            self.assertEqual(items[0]["text"], "CLI export memory survives round trip.")
+
 
 if __name__ == "__main__":
     unittest.main()

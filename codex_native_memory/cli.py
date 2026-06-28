@@ -5,6 +5,7 @@ import json
 import sys
 import time
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from .bootstrap import bootstrap_memory
@@ -160,6 +161,24 @@ def build_parser() -> argparse.ArgumentParser:
     revise.add_argument("--confidence", type=float)
     revise.add_argument("--json", action="store_true")
     revise.set_defaults(handler=cmd_revise)
+
+    export = subcommands.add_parser("export", help="Export pinned memory and project profile.")
+    export.add_argument("--project")
+    export.add_argument("--cwd")
+    export.add_argument("--scope", choices=["user", "project", "workflow"])
+    export.add_argument("--limit", type=int, default=100)
+    export.add_argument("--output")
+    export.add_argument("--no-profile", action="store_true")
+    export.add_argument("--json", action="store_true")
+    export.set_defaults(handler=cmd_export)
+
+    import_cmd = subcommands.add_parser("import", help="Import pinned memory from a JSON export.")
+    import_cmd.add_argument("path", nargs="?", default=None)
+    import_cmd.add_argument("--project")
+    import_cmd.add_argument("--cwd")
+    import_cmd.add_argument("--source", default="import")
+    import_cmd.add_argument("--json", action="store_true")
+    import_cmd.set_defaults(handler=cmd_import_bundle)
 
     process = subcommands.add_parser("process-queue", help="Summarize pending sessions.")
     process.add_argument("--limit", type=int, default=10)
@@ -439,6 +458,57 @@ def cmd_revise(args: argparse.Namespace) -> int:
         print(f"Updated memory #{payload['id']}: {payload['text']}")
     db.close()
     return 0
+
+
+def cmd_export(args: argparse.Namespace) -> int:
+    root = ensure_runtime_dirs(args.data_dir)
+    db = MemoryDB(root / "memory.sqlite3")
+    payload = db.export_bundle(
+        project=args.project,
+        cwd=args.cwd,
+        scope=args.scope,
+        limit=args.limit,
+        include_profile=not args.no_profile,
+    )
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    if args.output:
+        output_path = Path(args.output).expanduser()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(text + "\n", encoding="utf-8")
+        if args.json:
+            print(text)
+        else:
+            print(f"Saved memory export to {output_path}")
+    else:
+        print(text)
+    db.close()
+    return 0
+
+
+def cmd_import_bundle(args: argparse.Namespace) -> int:
+    root = ensure_runtime_dirs(args.data_dir)
+    db = MemoryDB(root / "memory.sqlite3")
+    if args.path:
+        raw_text = Path(args.path).expanduser().read_text(encoding="utf-8")
+    else:
+        raw_text = sys.stdin.read()
+    payload = json.loads(raw_text)
+    result = db.import_bundle(
+        payload,
+        project=args.project,
+        cwd=args.cwd,
+        source=args.source,
+    )
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(
+            "Imported memory: "
+            f"{result['imported']} new, {result['updated']} updated, "
+            f"{result['skipped']} skipped, {result['errors']} errors."
+        )
+    db.close()
+    return 0 if result["errors"] == 0 else 1
 
 
 def cmd_process_queue(args: argparse.Namespace) -> int:

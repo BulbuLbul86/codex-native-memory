@@ -157,6 +157,35 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "memory_export",
+        "description": "Export pinned memory and a computed project profile as a JSON bundle.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string"},
+                "cwd": {"type": "string"},
+                "scope": {"type": "string", "enum": ["user", "project", "workflow"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100},
+                "include_profile": {"type": "boolean", "default": True},
+            },
+        },
+    },
+    {
+        "name": "memory_import_bundle",
+        "description": "Import pinned memory items from a memory_export JSON bundle.",
+        "inputSchema": {
+            "type": "object",
+            "anyOf": [{"required": ["payload"]}, {"required": ["payload_json"]}],
+            "properties": {
+                "payload": {"type": "object"},
+                "payload_json": {"type": "string"},
+                "project": {"type": "string"},
+                "cwd": {"type": "string"},
+                "source": {"type": "string", "default": "import"},
+            },
+        },
+    },
+    {
         "name": "memory_forget",
         "description": "Delete a pinned memory item by id.",
         "inputSchema": {
@@ -309,6 +338,27 @@ def call_tool(db: MemoryDB, params: dict[str, Any]) -> dict[str, Any]:
             cwd=_optional_string(arguments.get("cwd")),
             source=_optional_string(arguments.get("source")),
             confidence=_optional_float(arguments.get("confidence")),
+        )
+    elif name == "memory_export":
+        payload = db.export_bundle(
+            project=_optional_string(arguments.get("project")),
+            cwd=_optional_string(arguments.get("cwd")),
+            scope=_optional_string(arguments.get("scope")),
+            limit=int(arguments.get("limit") or 100),
+            include_profile=bool(arguments.get("include_profile", True)),
+        )
+    elif name == "memory_import_bundle":
+        raw_payload = arguments.get("payload")
+        if raw_payload is None:
+            payload_json = _optional_string(arguments.get("payload_json"))
+            if payload_json is None:
+                raise ValueError("memory_import_bundle requires payload or payload_json.")
+            raw_payload = json.loads(payload_json)
+        payload = db.import_bundle(
+            raw_payload,
+            project=_optional_string(arguments.get("project")),
+            cwd=_optional_string(arguments.get("cwd")),
+            source=str(arguments.get("source") or "import"),
         )
     elif name == "memory_forget":
         memory_id = int(arguments.get("id") or 0)

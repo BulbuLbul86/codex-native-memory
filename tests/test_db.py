@@ -186,6 +186,72 @@ class MemoryDBTests(unittest.TestCase):
             self.assertIn("explicitly asks", updated_warning["text"])
             db.close()
 
+    def test_memory_export_import_bundle_round_trips_with_project_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_db = MemoryDB(root / "source.sqlite3")
+            source_db.remember(
+                "Always answer in Russian.",
+                scope="user",
+                subject="language_preference",
+            )
+            project_memory = source_db.remember(
+                "Project memory can be exported.",
+                scope="project",
+                subject="portability",
+                cwd=root / "demo",
+            )
+
+            all_bundle = source_db.export_bundle(limit=10)
+            bundle = source_db.export_bundle(cwd=root / "demo", limit=10)
+            target_db = MemoryDB(root / "target.sqlite3")
+            imported = target_db.import_bundle(bundle, project="copy")
+            reimported = target_db.import_bundle(bundle, project="copy")
+            source_db.update_memory(
+                project_memory["id"],
+                text="Project memory can be exported after edits.",
+            )
+            edited_bundle = source_db.export_bundle(cwd=root / "demo", limit=10)
+            edited_import = target_db.import_bundle(edited_bundle, project="copy")
+            imported_items = target_db.memory_items(project="copy", limit=10)
+            all_items = target_db.memory_items(limit=10)
+            user_item = next(
+                item for item in all_items if item["text"] == "Always answer in Russian."
+            )
+            project_item = next(
+                item
+                for item in all_items
+                if item["text"] == "Project memory can be exported after edits."
+            )
+            cwd_target_db = MemoryDB(root / "cwd-target.sqlite3")
+            cwd_imported = cwd_target_db.import_bundle(bundle, cwd=root / "other")
+            cwd_items = cwd_target_db.memory_items(project="other", limit=10)
+            cwd_project_item = next(item for item in cwd_items if item["scope"] == "project")
+
+            self.assertNotIn("profile", all_bundle)
+            self.assertEqual(bundle["version"], 1)
+            self.assertEqual(bundle["project"], "demo")
+            self.assertEqual(len(bundle["memories"]), 2)
+            self.assertTrue(all(item["origin_key"] for item in bundle["memories"]))
+            self.assertIn("profile", bundle)
+            self.assertEqual(imported["seen"], 2)
+            self.assertEqual(imported["imported"], 2)
+            self.assertEqual(imported["updated"], 0)
+            self.assertEqual(reimported["imported"], 0)
+            self.assertEqual(reimported["updated"], 2)
+            self.assertEqual(edited_import["imported"], 0)
+            self.assertEqual(edited_import["updated"], 2)
+            self.assertEqual(len(imported_items), 2)
+            self.assertIn("copy", {item["project"] for item in imported_items})
+            self.assertIn(None, {item["project"] for item in imported_items})
+            self.assertIsNone(user_item["project"])
+            self.assertEqual(project_item["project"], "copy")
+            self.assertEqual(cwd_imported["imported"], 2)
+            self.assertEqual(cwd_project_item["project"], "other")
+            source_db.close()
+            target_db.close()
+            cwd_target_db.close()
+
 
 if __name__ == "__main__":
     unittest.main()

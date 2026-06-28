@@ -113,6 +113,7 @@ class MemoryDB:
               project TEXT,
               cwd TEXT,
               source TEXT NOT NULL DEFAULT 'manual',
+              origin_key TEXT,
               confidence REAL NOT NULL DEFAULT 1.0,
               created_at TEXT NOT NULL,
               updated_at TEXT NOT NULL
@@ -125,6 +126,13 @@ class MemoryDB:
                 "source_app": "TEXT NOT NULL DEFAULT 'codex'",
                 "source_kind": "TEXT NOT NULL DEFAULT 'codex-jsonl'",
             },
+        )
+        self._ensure_columns("memory_items", {"origin_key": "TEXT"})
+        self.conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_memory_items_origin
+            ON memory_items(origin_key, project, scope)
+            """
         )
         self.fts_available = self._ensure_fts()
 
@@ -369,6 +377,7 @@ class MemoryDB:
         cwd: str | Path | None = None,
         source: str = "manual",
         confidence: float = 1.0,
+        origin_key: str | None = None,
     ) -> dict[str, Any]:
         clean_text = _clean_memory_text(text)
         if not clean_text:
@@ -376,9 +385,31 @@ class MemoryDB:
         clean_scope = _normalize_scope(scope)
         clean_subject = _clean_memory_label(subject, default="general")
         clean_source = _clean_memory_label(source, default="manual")
+        clean_origin_key = _clean_origin_key(origin_key)
         project_name = self._memory_target_project(scope=clean_scope, project=project, cwd=cwd)
         cwd_text = _memory_cwd(cwd)
         now = utc_now()
+        existing_origin_id = (
+            self._matching_memory_origin_id(
+                origin_key=clean_origin_key,
+                scope=clean_scope,
+                project=project_name,
+            )
+            if clean_origin_key
+            else None
+        )
+        if existing_origin_id is not None:
+            return self.update_memory(
+                existing_origin_id,
+                text=clean_text,
+                scope=clean_scope,
+                subject=clean_subject,
+                project=project_name,
+                cwd=cwd,
+                source=clean_source,
+                confidence=confidence,
+                origin_key=clean_origin_key,
+            )
         existing_id = self._matching_memory_id(
             scope=clean_scope,
             subject=clean_subject,
@@ -391,14 +422,16 @@ class MemoryDB:
                 cwd=cwd_text,
                 source=clean_source,
                 confidence=confidence,
+                origin_key=clean_origin_key,
             )
         with self.conn:
             cursor = self.conn.execute(
                 """
                 INSERT INTO memory_items(
-                  scope, subject, text, project, cwd, source, confidence, created_at, updated_at
+                  scope, subject, text, project, cwd, source,
+                  origin_key, confidence, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     clean_scope,
@@ -407,6 +440,7 @@ class MemoryDB:
                     project_name,
                     cwd_text,
                     clean_source,
+                    clean_origin_key,
                     min(max(float(confidence), 0.0), 1.0),
                     now,
                     now,
@@ -422,7 +456,7 @@ class MemoryDB:
             """
             SELECT
               id, scope, subject, text, project, cwd, source,
-              confidence, created_at, updated_at
+              origin_key, confidence, created_at, updated_at
             FROM memory_items
             WHERE id = ?
             """,
@@ -443,6 +477,7 @@ class MemoryDB:
         cwd: str | Path | None = None,
         source: str | None = None,
         confidence: float | None = None,
+        origin_key: str | None = None,
     ) -> dict[str, Any]:
         current = self.memory_item(memory_id)
         clean_scope = _normalize_scope(scope) if scope else str(current["scope"])
@@ -458,6 +493,9 @@ class MemoryDB:
             _clean_memory_label(source, default="manual")
             if source is not None
             else str(current["source"])
+        )
+        clean_origin_key = (
+            _clean_origin_key(origin_key) if origin_key is not None else current.get("origin_key")
         )
         if clean_scope == "user" and project is None:
             project_name = None
@@ -486,6 +524,7 @@ class MemoryDB:
                   project = ?,
                   cwd = ?,
                   source = ?,
+                  origin_key = ?,
                   confidence = ?,
                   updated_at = ?
                 WHERE id = ?
@@ -497,6 +536,7 @@ class MemoryDB:
                     project_name,
                     cwd_text,
                     clean_source,
+                    clean_origin_key,
                     confidence_value,
                     utc_now(),
                     memory_id,
@@ -530,6 +570,136 @@ class MemoryDB:
         with self.conn:
             cursor = self.conn.execute("DELETE FROM memory_items WHERE id = ?", (memory_id,))
         return cursor.rowcount > 0
+
+    def export_bundle(
+        self,
+        *,
+        project: str | None = None,
+        cwd: str | Path | None = None,
+        scope: str | None = None,
+        limit: int = 100,
+        include_profile: bool = True,
+    ) -> dict[str, Any]:
+        project_name = self._resolve_project(project=project, cwd=cwd) if (project or cwd) else None
+        memories = [
+            {**item, "origin_key": _memory_export_origin_key(item)}
+            for item in self.memory_items(project=project, cwd=cwd, scope=scope, limit=limit)
+        ]
+        bundle: dict[str, Any] = {
+            "version": 1,
+            "exported_at": utc_now(),
+            "project": project_name,
+            "scope": scope,
+            "memories": memories,
+        }
+        if include_profile and (project is not None or cwd is not None):
+            bundle["profile"] = self.project_profile(
+                project=project,
+                cwd=cwd,
+                limit=min(max(limit, 1), 50),
+            )
+        return bundle
+
+    def import_bundle(
+        self,
+        payload: Any,
+        *,
+        project: str | None = None,
+        cwd: str | Path | None = None,
+        source: str = "import",
+    ) -> dict[str, Any]:
+        if isinstance(payload, list):
+            raw_items = payload
+        elif isinstance(payload, dict):
+            raw_items = payload.get("memories", [])
+        else:
+            raise ValueError("Memory import payload must be a JSON object or list.")
+        if not isinstance(raw_items, list):
+            raise ValueError("Memory import payload must contain a 'memories' list.")
+
+        stats: dict[str, Any] = {
+            "seen": 0,
+            "imported": 0,
+            "updated": 0,
+            "skipped": 0,
+            "errors": 0,
+            "items": [],
+        }
+        for raw_item in raw_items:
+            stats["seen"] += 1
+            if not isinstance(raw_item, dict):
+                stats["skipped"] += 1
+                continue
+            try:
+                text = _clean_memory_text(str(raw_item.get("text") or ""))
+                if not text:
+                    stats["skipped"] += 1
+                    continue
+                scope = str(raw_item.get("scope") or "project")
+                subject = str(raw_item.get("subject") or "general")
+                clean_scope = _normalize_scope(scope)
+                clean_subject = _clean_memory_label(subject, default="general")
+                if project is not None:
+                    target_project = project
+                elif cwd is not None:
+                    target_project = None
+                else:
+                    target_project = raw_item.get("project")
+                target_cwd = cwd if cwd is not None else raw_item.get("cwd")
+                project_arg = None if clean_scope == "user" else target_project
+                project_name = self._memory_target_project(
+                    scope=clean_scope,
+                    project=str(project_arg) if project_arg is not None else None,
+                    cwd=target_cwd,
+                )
+                origin_key = _memory_export_origin_key(raw_item)
+                existing_id = self._matching_memory_id(
+                    scope=clean_scope,
+                    subject=clean_subject,
+                    text=text,
+                    project=project_name,
+                )
+                if origin_key:
+                    existing_id = (
+                        self._matching_memory_origin_id(
+                            origin_key=origin_key,
+                            scope=clean_scope,
+                            project=project_name,
+                        )
+                        or existing_id
+                    )
+                if existing_id is None:
+                    item = self.remember(
+                        text,
+                        scope=clean_scope,
+                        subject=clean_subject,
+                        project=project_name,
+                        cwd=target_cwd,
+                        source=source or str(raw_item.get("source") or "import"),
+                        confidence=float(raw_item.get("confidence", 1.0)),
+                        origin_key=origin_key,
+                    )
+                else:
+                    item = self.update_memory(
+                        existing_id,
+                        text=text,
+                        scope=clean_scope,
+                        subject=clean_subject,
+                        project=project_name,
+                        cwd=target_cwd,
+                        source=source or str(raw_item.get("source") or "import"),
+                        confidence=float(raw_item.get("confidence", 1.0)),
+                        origin_key=origin_key,
+                    )
+                if existing_id is None:
+                    stats["imported"] += 1
+                else:
+                    stats["updated"] += 1
+                stats["items"].append(item)
+            except Exception as exc:
+                stats["errors"] += 1
+                stats["items"].append({"error": str(exc), "raw": raw_item})
+        return stats
 
     def search(self, query: str, *, limit: int = 10, kind: str = "all") -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
@@ -804,6 +974,30 @@ class MemoryDB:
         ).fetchone()
         return int(row["id"]) if row else None
 
+    def _matching_memory_origin_id(
+        self,
+        *,
+        origin_key: str,
+        scope: str,
+        project: str | None,
+    ) -> int | None:
+        row = self.conn.execute(
+            """
+            SELECT id
+            FROM memory_items
+            WHERE origin_key = ?
+              AND scope = ?
+              AND (
+                (project IS NULL AND ? IS NULL)
+                OR project = ?
+              )
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (origin_key, scope, project, project),
+        ).fetchone()
+        return int(row["id"]) if row else None
+
     def recent_sessions(
         self,
         *,
@@ -903,7 +1097,7 @@ class MemoryDB:
             """
             SELECT
               id, scope, subject, text, project, cwd, source,
-              confidence, created_at, updated_at
+              origin_key, confidence, created_at, updated_at
             FROM memory_items
             WHERE
               (
@@ -1261,6 +1455,7 @@ def _memory_item_dict(row: sqlite3.Row) -> dict[str, Any]:
         "project": row["project"],
         "cwd": row["cwd"],
         "source": row["source"],
+        "origin_key": row["origin_key"],
         "confidence": row["confidence"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -1281,6 +1476,36 @@ def _clean_memory_text(value: str) -> str:
 def _clean_memory_label(value: str | None, *, default: str) -> str:
     clean = re.sub(r"[^\w.:-]+", "_", str(value or "").strip().lower()).strip("_")
     return clean or default
+
+
+def _clean_origin_key(value: str | None) -> str | None:
+    clean = str(value or "").strip()
+    if not clean:
+        return None
+    return re.sub(r"\s+", "_", clean)[:300]
+
+
+def _memory_export_origin_key(item: dict[str, Any]) -> str | None:
+    existing = _clean_origin_key(str(item.get("origin_key") or ""))
+    if existing:
+        return existing
+    raw_id = item.get("id")
+    if raw_id is None:
+        return None
+    try:
+        memory_id = int(raw_id)
+    except (TypeError, ValueError):
+        return None
+    scope = _normalize_scope(str(item.get("scope") or "project"))
+    project = (
+        "global"
+        if scope == "user"
+        else _clean_memory_label(
+            str(item.get("project") or "unscoped"),
+            default="unscoped",
+        )
+    )
+    return f"codex-native-memory:v1:{scope}:{project}:{memory_id}"
 
 
 def _memory_cwd(value: str | Path | None) -> str | None:

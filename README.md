@@ -27,6 +27,7 @@ This is an MVP. It already supports:
 - a dynamic project profile with preferences, constraints, warnings, and recent activity;
 - pinned manual memory items for durable user, project, and workflow rules,
   including update/delete and duplicate suppression;
+- JSON export/import for pinned memory backups and project-profile handoffs;
 - a bootstrap flow that imports recent memory, summarizes the queue, and returns context;
 - queue processing with extractive summaries;
 - optional AI summaries through `codex exec --ephemeral`;
@@ -69,6 +70,8 @@ python -m codex_native_memory bootstrap "current task" --cwd "$PWD" --json
 python -m codex_native_memory remember "Codex remains the primary coding AI." --cwd "$PWD"
 python -m codex_native_memory revise 1 --text "Codex remains the primary coding AI for this project."
 python -m codex_native_memory memories --cwd "$PWD"
+python -m codex_native_memory export --cwd "$PWD" --output memory-export.json
+python -m codex_native_memory import memory-export.json --cwd "$PWD"
 python -m codex_native_memory backfill --limit 50
 python -m codex_native_memory context "current task" --cwd "$PWD" --limit 5
 python -m codex_native_memory search "VPN" --limit 5
@@ -103,9 +106,19 @@ remember <text>              Store a pinned memory item.
 revise <id>                  Update a pinned memory item.
 memories                     List pinned memory items.
 forget <id>                  Delete a pinned memory item.
+export                       Export pinned memory and project profile JSON.
+import [path]                Import pinned memory from an export JSON file/stdin.
 process-queue                Summarize imported sessions.
 mcp                          Run the MCP stdio server.
 ```
+
+`export` writes pinned memory. When scoped with `--project` or `--cwd`, it also
+includes a computed project profile for handoff context; unscoped exports omit
+the project profile because they may contain memory from multiple projects.
+Imported items carry an `origin_key`, so repeated imports update existing
+records even when the source memory text changed. Use `--project` or `--cwd`
+on `import` to move project/workflow memory into a new target project; user
+scope memory remains global.
 
 Data defaults to `%USERPROFILE%\.codex-native-memory`. Override it with
 `CODEX_NATIVE_MEMORY_HOME`.
@@ -120,6 +133,8 @@ Data defaults to `%USERPROFILE%\.codex-native-memory`. Override it with
 - `memory_remember`: store a pinned memory item for future bootstrap/context.
 - `memory_notes`: list pinned memory items for a project/cwd.
 - `memory_update`: update a pinned memory item by id.
+- `memory_export`: export pinned memory and computed project profile as JSON.
+- `memory_import_bundle`: import pinned memory from a `memory_export` bundle.
 - `memory_forget`: delete a pinned memory item by id.
 - `memory_recent`: list recent imported sessions.
 - `memory_import`: import changed Codex transcript files.
