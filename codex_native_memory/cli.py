@@ -79,7 +79,15 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument(
         "--kind",
         default="all",
-        choices=["all", "messages", "prompts", "answers", "summaries", "observations"],
+        choices=[
+            "all",
+            "messages",
+            "prompts",
+            "answers",
+            "summaries",
+            "observations",
+            "memories",
+        ],
     )
     search.add_argument("--json", action="store_true")
     search.set_defaults(handler=cmd_search)
@@ -116,6 +124,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     bootstrap.add_argument("--json", action="store_true")
     bootstrap.set_defaults(handler=cmd_bootstrap)
+
+    remember = subcommands.add_parser("remember", help="Store a pinned memory item.")
+    remember.add_argument("text")
+    remember.add_argument("--scope", choices=["user", "project", "workflow"], default="project")
+    remember.add_argument("--subject", default="general")
+    remember.add_argument("--project")
+    remember.add_argument("--cwd")
+    remember.add_argument("--source", default="manual")
+    remember.add_argument("--confidence", type=float, default=1.0)
+    remember.add_argument("--json", action="store_true")
+    remember.set_defaults(handler=cmd_remember)
+
+    memories = subcommands.add_parser("memories", help="List pinned memory items.")
+    memories.add_argument("--project")
+    memories.add_argument("--cwd")
+    memories.add_argument("--scope", choices=["user", "project", "workflow"])
+    memories.add_argument("--limit", type=int, default=20)
+    memories.add_argument("--json", action="store_true")
+    memories.set_defaults(handler=cmd_memories)
+
+    forget = subcommands.add_parser("forget", help="Delete a pinned memory item by id.")
+    forget.add_argument("id", type=int)
+    forget.add_argument("--json", action="store_true")
+    forget.set_defaults(handler=cmd_forget)
 
     process = subcommands.add_parser("process-queue", help="Summarize pending sessions.")
     process.add_argument("--limit", type=int, default=10)
@@ -272,6 +304,7 @@ def cmd_context(args: argparse.Namespace) -> int:
         print(f"Sessions: {payload['session_count']}")
         print("\nBrief:")
         print(payload["brief"])
+        _print_memories(payload["memories"])
         _print_context_section("Decisions", payload["decisions"])
         _print_context_section("Open questions", payload["open_questions"])
         _print_observations(payload["observations"])
@@ -313,6 +346,7 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
         print(f"Summaries: {payload['summaries']}")
         print("\nProfile brief:")
         print(profile["brief"])
+        _print_memories(profile["memories"])
         _print_context_section("Preferences", profile["preferences"])
         _print_context_section("Constraints", profile["constraints"])
         _print_context_section("Warnings", profile["warnings"])
@@ -321,6 +355,57 @@ def cmd_bootstrap(args: argparse.Namespace) -> int:
         _print_matches(context["relevant_matches"])
     db.close()
     return 0
+
+
+def cmd_remember(args: argparse.Namespace) -> int:
+    root = ensure_runtime_dirs(args.data_dir)
+    db = MemoryDB(root / "memory.sqlite3")
+    payload = db.remember(
+        args.text,
+        scope=args.scope,
+        subject=args.subject,
+        project=args.project,
+        cwd=args.cwd,
+        source=args.source,
+        confidence=args.confidence,
+    )
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"Stored memory #{payload['id']}: {payload['text']}")
+    db.close()
+    return 0
+
+
+def cmd_memories(args: argparse.Namespace) -> int:
+    root = ensure_runtime_dirs(args.data_dir)
+    db = MemoryDB(root / "memory.sqlite3")
+    payload = db.memory_items(
+        project=args.project,
+        cwd=args.cwd,
+        scope=args.scope,
+        limit=args.limit,
+    )
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        _print_memories(payload)
+    db.close()
+    return 0
+
+
+def cmd_forget(args: argparse.Namespace) -> int:
+    root = ensure_runtime_dirs(args.data_dir)
+    db = MemoryDB(root / "memory.sqlite3")
+    deleted = db.forget_memory(args.id)
+    payload = {"id": args.id, "deleted": deleted}
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        status = "Deleted" if deleted else "Not found"
+        print(f"{status}: memory #{args.id}")
+    db.close()
+    return 0 if deleted else 1
 
 
 def cmd_process_queue(args: argparse.Namespace) -> int:
@@ -431,6 +516,15 @@ def _print_context_section(title: str, items: list[str]) -> None:
     print(f"\n{title}:")
     for item in items:
         print(f"- {item}")
+
+
+def _print_memories(items: list[dict[str, Any]]) -> None:
+    if not items:
+        return
+    print("\nPinned memory:")
+    for item in items:
+        project = item.get("project") or "global"
+        print(f"- #{item['id']} [{item['scope']}/{item['subject']}/{project}] {item['text']}")
 
 
 def _print_observations(items: list[dict[str, Any]]) -> None:

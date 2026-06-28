@@ -14,7 +14,9 @@ from .sources import load_sources, review_options
 TOOLS: list[dict[str, Any]] = [
     {
         "name": "memory_search",
-        "description": "Search imported Codex conversations, summaries, and observations.",
+        "description": (
+            "Search imported Codex conversations, summaries, observations, and memories."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -22,7 +24,15 @@ TOOLS: list[dict[str, Any]] = [
                 "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
                 "kind": {
                     "type": "string",
-                    "enum": ["all", "messages", "prompts", "answers", "summaries", "observations"],
+                    "enum": [
+                        "all",
+                        "messages",
+                        "prompts",
+                        "answers",
+                        "summaries",
+                        "observations",
+                        "memories",
+                    ],
                     "default": "all",
                 },
             },
@@ -92,6 +102,49 @@ TOOLS: list[dict[str, Any]] = [
                 "source_id": {"type": "string"},
                 "all_sources": {"type": "boolean", "default": False},
             },
+        },
+    },
+    {
+        "name": "memory_remember",
+        "description": "Store a pinned memory item for future Codex project bootstrap/context.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "scope": {
+                    "type": "string",
+                    "enum": ["user", "project", "workflow"],
+                    "default": "project",
+                },
+                "subject": {"type": "string", "default": "general"},
+                "project": {"type": "string"},
+                "cwd": {"type": "string"},
+                "source": {"type": "string", "default": "manual"},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1, "default": 1},
+            },
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "memory_notes",
+        "description": "List pinned memory items for a project/cwd, including global user memory.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string"},
+                "cwd": {"type": "string"},
+                "scope": {"type": "string", "enum": ["user", "project", "workflow"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+            },
+        },
+    },
+    {
+        "name": "memory_forget",
+        "description": "Delete a pinned memory item by id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"id": {"type": "integer", "minimum": 1}},
+            "required": ["id"],
         },
     },
     {
@@ -211,6 +264,26 @@ def call_tool(db: MemoryDB, params: dict[str, Any]) -> dict[str, Any]:
                 force=bool(arguments.get("force") or False),
                 data_root=db.path.parent,
             )
+    elif name == "memory_remember":
+        payload = db.remember(
+            str(arguments.get("text") or ""),
+            scope=str(arguments.get("scope") or "project"),
+            subject=str(arguments.get("subject") or "general"),
+            project=_optional_string(arguments.get("project")),
+            cwd=_optional_string(arguments.get("cwd")),
+            source=str(arguments.get("source") or "manual"),
+            confidence=float(arguments.get("confidence") or 1.0),
+        )
+    elif name == "memory_notes":
+        payload = db.memory_items(
+            project=_optional_string(arguments.get("project")),
+            cwd=_optional_string(arguments.get("cwd")),
+            scope=_optional_string(arguments.get("scope")),
+            limit=int(arguments.get("limit") or 20),
+        )
+    elif name == "memory_forget":
+        memory_id = int(arguments.get("id") or 0)
+        payload = {"id": memory_id, "deleted": db.forget_memory(memory_id)}
     elif name == "memory_sources":
         config = load_sources(db.path.parent)
         action = str(arguments.get("action") or "list")

@@ -16,19 +16,25 @@ Preferred flow:
 
 1. If the MCP server is available and the user needs project continuity, call
    `memory_bootstrap` first with the current project/cwd and a focused query
-   when available. Use its dynamic profile to gather preferences, constraints,
-   warnings, recent activity, decisions, open questions, and relevant matches.
+   when available. Use its pinned memory and dynamic profile to gather
+   preferences, constraints, warnings, recent activity, decisions, open
+   questions, and relevant matches.
 2. If `memory_bootstrap` is unavailable or too heavy for the task, call
    `memory_context` with the current project/cwd and a focused query.
 3. For narrow lookups, or when `memory_context` returns too little, call
    `memory_search` with a focused query.
-4. If MCP is not available but this repository is accessible, run:
+4. When the user explicitly asks Codex to remember a durable preference, rule,
+   or project fact, call `memory_remember`. Use `scope=user` for global user
+   preferences, `scope=project` for project facts, and `scope=workflow` for
+   process guardrails. Use `memory_notes` to inspect stored items and
+   `memory_forget` to delete a bad item by id.
+5. If MCP is not available but this repository is accessible, run:
 
    ```powershell
    python -m codex_native_memory bootstrap "<query>" --cwd "<current cwd>" --summary-mode extractive --json
    ```
 
-5. Use retrieved memory as context, not as unquestioned truth. If the result is stale or uncertain,
+6. Use retrieved memory as context, not as unquestioned truth. If the result is stale or uncertain,
    verify against the current workspace.
 
 For broad project catch-up, search for the project name, the active task, and the user's exact

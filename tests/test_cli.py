@@ -219,6 +219,70 @@ class CliTests(unittest.TestCase):
                 "bootstrap-session",
             )
 
+    def test_memory_item_cli_remembers_lists_searches_and_forgets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            remember_code, remember_output = self.run_cli(
+                [
+                    "--data-dir",
+                    tmp,
+                    "remember",
+                    "Pinned CLI memory keeps Codex primary.",
+                    "--cwd",
+                    str(root / "project"),
+                    "--subject",
+                    "provider_preference",
+                    "--json",
+                ]
+            )
+            payload = json.loads(remember_output)
+            list_code, list_output = self.run_cli(
+                [
+                    "--data-dir",
+                    tmp,
+                    "memories",
+                    "--cwd",
+                    str(root / "project"),
+                    "--json",
+                ]
+            )
+            search_code, search_output = self.run_cli(
+                [
+                    "--data-dir",
+                    tmp,
+                    "search",
+                    "Codex primary",
+                    "--kind",
+                    "memories",
+                    "--json",
+                ]
+            )
+            forget_code, forget_output = self.run_cli(
+                ["--data-dir", tmp, "forget", str(payload["id"]), "--json"]
+            )
+            after_code, after_output = self.run_cli(
+                [
+                    "--data-dir",
+                    tmp,
+                    "memories",
+                    "--cwd",
+                    str(root / "project"),
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(remember_code, 0)
+            self.assertEqual(payload["project"], "project")
+            self.assertEqual(payload["scope"], "project")
+            self.assertEqual(list_code, 0)
+            self.assertEqual(json.loads(list_output)[0]["id"], payload["id"])
+            self.assertEqual(search_code, 0)
+            self.assertEqual(json.loads(search_output)[0]["memory_id"], payload["id"])
+            self.assertEqual(forget_code, 0)
+            self.assertTrue(json.loads(forget_output)["deleted"])
+            self.assertEqual(after_code, 0)
+            self.assertEqual(json.loads(after_output), [])
+
 
 if __name__ == "__main__":
     unittest.main()

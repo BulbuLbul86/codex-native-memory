@@ -104,6 +104,19 @@ class MemoryDB:
               confidence REAL NOT NULL DEFAULT 0.5,
               created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS memory_items (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              scope TEXT NOT NULL,
+              subject TEXT NOT NULL,
+              text TEXT NOT NULL,
+              project TEXT,
+              cwd TEXT,
+              source TEXT NOT NULL DEFAULT 'manual',
+              confidence REAL NOT NULL DEFAULT 1.0,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
             """
         )
         self._ensure_columns(
@@ -346,6 +359,93 @@ class MemoryDB:
                 ],
             )
 
+    def remember(
+        self,
+        text: str,
+        *,
+        scope: str = "project",
+        subject: str = "general",
+        project: str | None = None,
+        cwd: str | Path | None = None,
+        source: str = "manual",
+        confidence: float = 1.0,
+    ) -> dict[str, Any]:
+        clean_text = _clean_memory_text(text)
+        if not clean_text:
+            raise ValueError("Memory text cannot be empty.")
+        clean_scope = _normalize_scope(scope)
+        clean_subject = _clean_memory_label(subject, default="general")
+        clean_source = _clean_memory_label(source, default="manual")
+        project_name = self._memory_target_project(scope=clean_scope, project=project, cwd=cwd)
+        cwd_text = _memory_cwd(cwd)
+        now = utc_now()
+        with self.conn:
+            cursor = self.conn.execute(
+                """
+                INSERT INTO memory_items(
+                  scope, subject, text, project, cwd, source, confidence, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    clean_scope,
+                    clean_subject,
+                    clean_text,
+                    project_name,
+                    cwd_text,
+                    clean_source,
+                    min(max(float(confidence), 0.0), 1.0),
+                    now,
+                    now,
+                ),
+            )
+        memory_id = cursor.lastrowid
+        if memory_id is None:
+            raise RuntimeError("SQLite did not return a memory item id.")
+        return self.memory_item(memory_id)
+
+    def memory_item(self, memory_id: int) -> dict[str, Any]:
+        row = self.conn.execute(
+            """
+            SELECT
+              id, scope, subject, text, project, cwd, source,
+              confidence, created_at, updated_at
+            FROM memory_items
+            WHERE id = ?
+            """,
+            (memory_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Memory item not found: {memory_id}")
+        return _memory_item_dict(row)
+
+    def memory_items(
+        self,
+        *,
+        project: str | None = None,
+        cwd: str | Path | None = None,
+        scope: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        clean_scope = _normalize_scope(scope) if scope else None
+        restrict_project = project is not None or cwd is not None
+        project_name = (
+            self._memory_target_project(scope="project", project=project, cwd=cwd)
+            if restrict_project
+            else None
+        )
+        return self._project_memory_items(
+            project_name,
+            scope=clean_scope,
+            limit=max(limit, 1),
+            include_all=not restrict_project,
+        )
+
+    def forget_memory(self, memory_id: int) -> bool:
+        with self.conn:
+            cursor = self.conn.execute("DELETE FROM memory_items WHERE id = ?", (memory_id,))
+        return cursor.rowcount > 0
+
     def search(self, query: str, *, limit: int = 10, kind: str = "all") -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         if kind in {"all", "messages", "prompts", "answers"}:
@@ -355,6 +455,8 @@ class MemoryDB:
             results.extend(self._search_summaries(query, limit=limit))
         if kind in {"all", "observations"}:
             results.extend(self._search_observations(query, limit=limit))
+        if kind in {"all", "memories"}:
+            results.extend(self._search_memory_items(query, limit=limit))
         return results[:limit]
 
     def project_context(
@@ -369,6 +471,7 @@ class MemoryDB:
         session_count = self._project_session_count(project_name)
         recent = self.recent_sessions(limit=limit, project=project_name)
         summaries = self._project_summaries(project_name, limit=limit)
+        memories = self._project_memory_items(project_name, limit=max(limit * 2, 10))
         observations = self._project_observations(project_name, limit=max(limit * 2, 10))
         matches = self._project_matches(project_name, query=query, limit=limit)
         decisions = _context_strings(
@@ -388,11 +491,13 @@ class MemoryDB:
                 summaries=summaries,
                 decisions=decisions,
                 open_questions=open_questions,
+                memories=memories,
                 observations=observations,
                 matches=matches,
             ),
             "recent_sessions": recent,
             "summaries": summaries,
+            "memories": memories,
             "decisions": decisions,
             "open_questions": open_questions,
             "observations": observations,
@@ -410,7 +515,9 @@ class MemoryDB:
         session_count = self._project_session_count(project_name)
         recent = self.recent_sessions(limit=min(max(limit, 1), 10), project=project_name)
         summaries = self._project_summaries(project_name, limit=limit)
+        memories = self._project_memory_items(project_name, limit=max(limit * 2, 10))
         observations = self._project_observations(project_name, limit=max(limit * 3, 15))
+        profile_signals = memories + observations
         decisions = _context_strings(
             (decision for summary in summaries for decision in summary["decisions"]),
             limit=max(limit, 6),
@@ -422,7 +529,7 @@ class MemoryDB:
         preferences = _context_strings(
             (
                 str(item["text"])
-                for item in observations
+                for item in profile_signals
                 if _profile_observation_bucket(item) == "preference"
             ),
             limit=limit,
@@ -430,7 +537,7 @@ class MemoryDB:
         constraints = _context_strings(
             (
                 str(item["text"])
-                for item in observations
+                for item in profile_signals
                 if _profile_observation_bucket(item) == "constraint"
             ),
             limit=limit,
@@ -438,7 +545,7 @@ class MemoryDB:
         warnings = _context_strings(
             (
                 str(item["text"])
-                for item in observations
+                for item in profile_signals
                 if _profile_observation_bucket(item) == "warning"
             ),
             limit=limit,
@@ -451,7 +558,7 @@ class MemoryDB:
             "project": project_name,
             "session_count": session_count,
             "profile_kind": "dynamic",
-            "updated_at": _latest_timestamp(recent, summaries, observations),
+            "updated_at": _latest_timestamp(recent, summaries, memories, observations),
             "brief": _profile_brief(
                 project=project_name,
                 session_count=session_count,
@@ -463,6 +570,7 @@ class MemoryDB:
                 warnings=warnings,
             ),
             "recent_activity": recent[:3],
+            "memories": memories,
             "decisions": decisions,
             "open_questions": open_questions,
             "preferences": preferences,
@@ -549,6 +657,35 @@ class MemoryDB:
                 "session_id": row["session_id"],
                 "scope": row["scope"],
                 "subject": row["subject"],
+                "text": _snippet(row["text"]),
+                "confidence": row["confidence"],
+                "score": 0.0,
+            }
+            for row in rows
+        ]
+
+    def _search_memory_items(self, query: str, *, limit: int) -> list[dict[str, Any]]:
+        like = f"%{query}%"
+        rows = self.conn.execute(
+            """
+            SELECT
+              id, scope, subject, text, project, cwd, source,
+              confidence, created_at, updated_at
+            FROM memory_items
+            WHERE text LIKE ? OR subject LIKE ? OR scope LIKE ? OR project LIKE ?
+            ORDER BY confidence DESC, updated_at DESC
+            LIMIT ?
+            """,
+            (like, like, like, like, limit),
+        ).fetchall()
+        return [
+            {
+                "type": "memory",
+                "memory_id": row["id"],
+                "scope": row["scope"],
+                "subject": row["subject"],
+                "project": row["project"],
+                "source": row["source"],
                 "text": _snippet(row["text"]),
                 "confidence": row["confidence"],
                 "score": 0.0,
@@ -643,6 +780,55 @@ class MemoryDB:
                 break
         return deduped
 
+    def _project_memory_items(
+        self,
+        project: str | None,
+        *,
+        scope: str | None = None,
+        limit: int,
+        include_all: bool = False,
+    ) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT
+              id, scope, subject, text, project, cwd, source,
+              confidence, created_at, updated_at
+            FROM memory_items
+            WHERE
+              (
+                ? = 1
+                OR (? IS NOT NULL AND (project = ? OR (project IS NULL AND scope = 'user')))
+                OR (? IS NULL AND project IS NULL)
+              )
+              AND (? IS NULL OR scope = ?)
+            ORDER BY
+              CASE WHEN source = 'manual' THEN 0 ELSE 1 END,
+              confidence DESC,
+              updated_at DESC
+            LIMIT ?
+            """,
+            (
+                int(include_all),
+                project,
+                project,
+                project,
+                scope,
+                scope,
+                limit * 3,
+            ),
+        ).fetchall()
+        deduped: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str, str | None]] = set()
+        for row in rows:
+            key = (row["scope"], row["subject"], row["text"], row["project"])
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(_memory_item_dict(row))
+            if len(deduped) >= limit:
+                break
+        return deduped
+
     def _project_matches(
         self,
         project: str | None,
@@ -681,13 +867,50 @@ class MemoryDB:
         if clean_project:
             return clean_project
         if cwd is not None:
-            matched = self._project_for_cwd(cwd)
+            matched = self._project_for_cwd(cwd) or self._memory_project_for_cwd(cwd)
             if matched:
                 return matched
             cwd_project = _project_from_cwd(cwd)
-            if cwd_project and self._project_session_count(cwd_project) > 0:
+            if cwd_project:
                 return cwd_project
         return self._latest_project()
+
+    def _memory_target_project(
+        self,
+        *,
+        scope: str,
+        project: str | None,
+        cwd: str | Path | None,
+    ) -> str | None:
+        clean_project = str(project).strip() if project else ""
+        if clean_project:
+            return clean_project
+        if scope == "user":
+            return None
+        if cwd is not None:
+            matched = self._project_for_cwd(cwd) or self._memory_project_for_cwd(cwd)
+            if matched:
+                return matched
+            return _project_from_cwd(cwd)
+        return self._latest_project()
+
+    def _memory_project_for_cwd(self, cwd: str | Path) -> str | None:
+        target = _normalized_path(cwd)
+        rows = self.conn.execute(
+            """
+            SELECT project, cwd
+            FROM memory_items
+            WHERE project IS NOT NULL AND project != '' AND cwd IS NOT NULL AND cwd != ''
+            """
+        ).fetchall()
+        best_project: str | None = None
+        best_length = -1
+        for row in rows:
+            memory_cwd = _normalized_path(row["cwd"])
+            if _path_is_under(target, memory_cwd) and len(memory_cwd) > best_length:
+                best_project = str(row["project"])
+                best_length = len(memory_cwd)
+        return best_project
 
     def _project_for_cwd(self, cwd: str | Path) -> str | None:
         target = _normalized_path(cwd)
@@ -735,6 +958,7 @@ class MemoryDB:
             "messages": count("SELECT COUNT(*) AS count FROM messages"),
             "summaries": count("SELECT COUNT(*) AS count FROM session_summaries"),
             "observations": count("SELECT COUNT(*) AS count FROM observations"),
+            "memory_items": count("SELECT COUNT(*) AS count FROM memory_items"),
             "queue": {row["status"]: row["count"] for row in queue_rows},
             "sources": {row["source_app"]: row["count"] for row in source_rows},
         }
@@ -799,12 +1023,16 @@ def _context_brief(
     summaries: list[dict[str, Any]],
     decisions: list[str],
     open_questions: list[str],
+    memories: list[dict[str, Any]],
     observations: list[dict[str, Any]],
     matches: list[dict[str, Any]],
 ) -> str:
     parts = [f"Project: {project or 'all'} ({session_count} sessions)."]
     if summaries:
         parts.append(f"Latest: {_snippet(str(summaries[0]['summary']), limit=220)}")
+    if memories:
+        top_memories = [str(item["text"]) for item in memories[:3]]
+        parts.append("Pinned memory: " + "; ".join(top_memories))
     if decisions:
         parts.append("Decisions: " + "; ".join(decisions[:3]))
     if open_questions:
@@ -911,6 +1139,43 @@ def _message_result(row: sqlite3.Row) -> dict[str, Any]:
         "text": _snippet(row["text"]),
         "score": row["score"],
     }
+
+
+def _memory_item_dict(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "scope": row["scope"],
+        "subject": row["subject"],
+        "text": row["text"],
+        "project": row["project"],
+        "cwd": row["cwd"],
+        "source": row["source"],
+        "confidence": row["confidence"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _normalize_scope(value: str | None) -> str:
+    scope = str(value or "").strip().lower()
+    if scope in {"user", "project", "workflow"}:
+        return scope
+    raise ValueError("Memory scope must be one of: user, project, workflow.")
+
+
+def _clean_memory_text(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _clean_memory_label(value: str | None, *, default: str) -> str:
+    clean = re.sub(r"[^\w.:-]+", "_", str(value or "").strip().lower()).strip("_")
+    return clean or default
+
+
+def _memory_cwd(value: str | Path | None) -> str | None:
+    if value is None:
+        return None
+    return str(Path(value).expanduser())
 
 
 def _snippet(text: str, *, limit: int = 500) -> str:

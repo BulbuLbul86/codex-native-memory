@@ -40,11 +40,39 @@ class McpServerTests(unittest.TestCase):
                     },
                 },
             )
-            context = handle_message(
+            remember = handle_message(
                 db,
                 {
                     "jsonrpc": "2.0",
                     "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "memory_remember",
+                        "arguments": {
+                            "text": "Pinned MCP memory keeps Codex primary.",
+                            "project": "demo",
+                            "subject": "provider_preference",
+                        },
+                    },
+                },
+            )
+            notes = handle_message(
+                db,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "memory_notes",
+                        "arguments": {"project": "demo"},
+                    },
+                },
+            )
+            context = handle_message(
+                db,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 5,
                     "method": "tools/call",
                     "params": {
                         "name": "memory_context",
@@ -56,7 +84,7 @@ class McpServerTests(unittest.TestCase):
                 db,
                 {
                     "jsonrpc": "2.0",
-                    "id": 4,
+                    "id": 6,
                     "method": "tools/call",
                     "params": {
                         "name": "memory_bootstrap",
@@ -69,22 +97,46 @@ class McpServerTests(unittest.TestCase):
                     },
                 },
             )
+            memory_id = json.loads(remember["result"]["content"][0]["text"])["id"]
+            forget = handle_message(
+                db,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 7,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "memory_forget",
+                        "arguments": {"id": memory_id},
+                    },
+                },
+            )
             db.close()
 
         tool_names = {tool["name"] for tool in tools["result"]["tools"]}
         payload = json.loads(search["result"]["content"][0]["text"])
+        remember_payload = json.loads(remember["result"]["content"][0]["text"])
+        notes_payload = json.loads(notes["result"]["content"][0]["text"])
         context_payload = json.loads(context["result"]["content"][0]["text"])
         bootstrap_payload = json.loads(bootstrap["result"]["content"][0]["text"])
+        forget_payload = json.loads(forget["result"]["content"][0]["text"])
         self.assertIn("memory_context", tool_names)
         self.assertIn("memory_bootstrap", tool_names)
+        self.assertIn("memory_remember", tool_names)
+        self.assertIn("memory_notes", tool_names)
+        self.assertIn("memory_forget", tool_names)
         self.assertIn("memory_sources", tool_names)
         self.assertEqual(payload[0]["session_id"], "s1")
+        self.assertEqual(remember_payload["project"], "demo")
+        self.assertEqual(notes_payload[0]["id"], remember_payload["id"])
         self.assertEqual(context_payload["project"], "demo")
+        self.assertEqual(context_payload["memories"][0]["id"], remember_payload["id"])
         self.assertEqual(context_payload["relevant_matches"][0]["session_id"], "s1")
         self.assertEqual(bootstrap_payload["import"]["seen"], 0)
         self.assertEqual(bootstrap_payload["summaries"]["seen"], 0)
         self.assertEqual(bootstrap_payload["profile"]["project"], "demo")
+        self.assertEqual(bootstrap_payload["profile"]["memories"][0]["id"], remember_payload["id"])
         self.assertEqual(bootstrap_payload["context"]["relevant_matches"][0]["session_id"], "s1")
+        self.assertTrue(forget_payload["deleted"])
 
     def test_sources_and_errors_are_reported_without_crashing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

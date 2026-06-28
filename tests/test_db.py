@@ -123,6 +123,52 @@ class MemoryDBTests(unittest.TestCase):
             self.assertIn("Dynamic project profile: demo", profile["brief"])
             db.close()
 
+    def test_pinned_memory_items_are_project_aware_and_searchable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = MemoryDB(root / "memory.sqlite3")
+            user_memory = db.remember(
+                "Always answer in Russian for this user.",
+                scope="user",
+                subject="language_preference",
+            )
+            project_memory = db.remember(
+                "Codex Native Memory must keep Codex as the primary coding AI.",
+                scope="project",
+                subject="provider_preference",
+                cwd=root / "demo",
+            )
+            warning_memory = db.remember(
+                "Avoid dashboard windows unless explicitly requested.",
+                scope="workflow",
+                subject="multi_agent_usage",
+                project="demo",
+            )
+
+            items = db.memory_items(cwd=root / "demo" / "nested", limit=10)
+            context_by_cwd = db.project_context(cwd=root / "demo" / "nested", limit=5)
+            context = db.project_context(project="demo", query="primary coding AI", limit=5)
+            profile = db.project_profile(project="demo", limit=5)
+            results = db.search("primary coding AI", limit=5, kind="memories")
+            deleted = db.forget_memory(project_memory["id"])
+            remaining = db.memory_items(project="demo", limit=10)
+
+            self.assertIsNone(user_memory["project"])
+            self.assertEqual(project_memory["project"], "demo")
+            self.assertEqual(warning_memory["project"], "demo")
+            self.assertEqual({item["id"] for item in items}, {1, 2, 3})
+            self.assertEqual(context_by_cwd["project"], "demo")
+            self.assertIn(project_memory["id"], {item["id"] for item in context_by_cwd["memories"]})
+            self.assertIn(project_memory["text"], context["brief"])
+            self.assertIn(user_memory["id"], {item["id"] for item in context["memories"]})
+            self.assertIn("Always answer in Russian for this user.", profile["preferences"])
+            self.assertIn(project_memory["text"], profile["constraints"])
+            self.assertIn(warning_memory["text"], profile["warnings"])
+            self.assertEqual(results[0]["memory_id"], project_memory["id"])
+            self.assertTrue(deleted)
+            self.assertNotIn(project_memory["id"], {item["id"] for item in remaining})
+            db.close()
+
 
 if __name__ == "__main__":
     unittest.main()
