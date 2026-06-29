@@ -239,6 +239,8 @@ def serve(
 def handle_message(db: MemoryDB | None, message: dict[str, Any]) -> dict[str, Any] | None:
     method = message.get("method")
     request_id = message.get("id")
+    if method is None and request_id is None:
+        return None
     if method and method.startswith("notifications/"):
         return None
     try:
@@ -411,8 +413,7 @@ class StdioTransport:
 
     def write_message(self, message: dict[str, Any]) -> None:
         body = json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
-        self.stdout.write(header + body)
+        self.stdout.write(body + b"\n")
         self.stdout.flush()
 
 

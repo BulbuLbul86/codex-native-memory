@@ -17,6 +17,10 @@ def _frame(payload: dict[str, object]) -> bytes:
     return b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body
 
 
+def _line(payload: dict[str, object]) -> bytes:
+    return json.dumps(payload).encode("utf-8") + b"\n"
+
+
 class McpServerTests(unittest.TestCase):
     def test_serve_lists_tools_without_opening_memory_db(self) -> None:
         initialize = {
@@ -40,8 +44,35 @@ class McpServerTests(unittest.TestCase):
             serve(stdin=stdin, stdout=stdout)
 
         output = stdout.getvalue()
+        self.assertNotIn(b"Content-Length", output)
         self.assertIn(b"codex-native-memory", output)
         self.assertIn(b"memory_search", output)
+
+    def test_serve_supports_json_lines_transport_used_by_codex(self) -> None:
+        initialize = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+        initialized = {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {},
+        }
+        tools_list = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+        stdin = BytesIO(_line(initialize) + _line(initialized) + _line(tools_list))
+        stdout = BytesIO()
+
+        with patch(
+            "codex_native_memory.mcp_server.MemoryDB",
+            side_effect=AssertionError("tools/list should not open the memory database"),
+        ):
+            serve(stdin=stdin, stdout=stdout)
+
+        messages = [
+            json.loads(line)
+            for line in stdout.getvalue().splitlines()
+            if line.strip()
+        ]
+        self.assertEqual([message["id"] for message in messages], [1, 2])
+        self.assertEqual(messages[0]["result"]["serverInfo"]["name"], "codex-native-memory")
+        self.assertIn("tools", messages[1]["result"])
 
     def test_tools_list_and_memory_search_return_json_rpc_results(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

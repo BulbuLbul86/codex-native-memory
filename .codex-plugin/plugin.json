@@ -1,6 +1,6 @@
 {
   "name": "codex-native-memory",
-  "version": "0.1.0+codex.20260628232459",
+  "version": "0.1.0+codex.20260629035746",
   "description": "Local cross-session memory for Codex Desktop and Codex CLI.",
   "author": {
     "name": "Codex Native Memory contributors"
