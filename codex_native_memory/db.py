@@ -834,6 +834,61 @@ class MemoryDB:
             "observations": observation_texts,
         }
 
+    def project_candidates(
+        self,
+        *,
+        project: str | None = None,
+        cwd: str | Path | None = None,
+        query: str | None = None,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        current_project = (
+            self._resolve_project(project=project, cwd=cwd) if (project or cwd) else None
+        )
+        query_hits = self._project_query_hits(query=query)
+        rows = self.conn.execute(
+            """
+            SELECT
+              project,
+              COUNT(*) AS session_count,
+              MAX(COALESCE(updated_at, started_at)) AS latest,
+              MIN(cwd) AS sample_cwd
+            FROM sessions
+            WHERE project IS NOT NULL AND project != ''
+            GROUP BY project
+            """
+        ).fetchall()
+        candidates: list[dict[str, Any]] = []
+        for row in rows:
+            candidate_project = str(row["project"])
+            if candidate_project == current_project or _is_ephemeral_project(candidate_project):
+                continue
+            hits = query_hits.get(candidate_project, 0)
+            session_count = int(row["session_count"])
+            score = hits * 100 + min(session_count, 20) * 2
+            reasons = [f"{session_count} sessions"]
+            if hits:
+                reasons.insert(0, f"{hits} query matches")
+            if row["latest"]:
+                reasons.append("recent activity")
+            candidates.append(
+                {
+                    "project": candidate_project,
+                    "session_count": session_count,
+                    "latest": row["latest"],
+                    "sample_cwd": row["sample_cwd"],
+                    "query_hits": hits,
+                    "score": score,
+                    "confidence": "high" if hits else "medium" if session_count >= 3 else "low",
+                    "reasons": reasons,
+                }
+            )
+        candidates.sort(
+            key=lambda item: (item["score"], str(item["latest"] or "")),
+            reverse=True,
+        )
+        return candidates[: max(1, limit)]
+
     def _search_messages(
         self, query: str, *, limit: int, role: str | None = None
     ) -> list[dict[str, Any]]:
@@ -1155,6 +1210,30 @@ class MemoryDB:
         }
         return [match for match in matches if match.get("session_id") in session_ids][:limit]
 
+    def _project_query_hits(self, *, query: str | None) -> dict[str, int]:
+        if not query:
+            return {}
+        matches = self.search(query, limit=50, kind="all")
+        session_ids = {
+            str(match["session_id"])
+            for match in matches
+            if match.get("session_id")
+        }
+        if not session_ids:
+            return {}
+        placeholders = ",".join("?" for _ in session_ids)
+        rows = self.conn.execute(
+            f"SELECT id, project FROM sessions WHERE id IN ({placeholders})",
+            tuple(session_ids),
+        ).fetchall()
+        by_session = {str(row["id"]): row["project"] for row in rows if row["project"]}
+        hits: dict[str, int] = {}
+        for match in matches:
+            project = by_session.get(str(match.get("session_id")))
+            if project:
+                hits[project] = hits.get(project, 0) + 1
+        return hits
+
     def _latest_project(self) -> str | None:
         row = self.conn.execute(
             """
@@ -1413,6 +1492,10 @@ def _latest_timestamp(*collections: list[dict[str, Any]]) -> str | None:
 def _project_from_cwd(cwd: str | Path) -> str | None:
     name = Path(cwd).expanduser().name
     return name or str(cwd)
+
+
+def _is_ephemeral_project(project: str | None) -> bool:
+    return bool(project and re.fullmatch(r"new-chat(?:-\d+)?", project.strip().lower()))
 
 
 def _normalized_path(value: str | Path) -> str:

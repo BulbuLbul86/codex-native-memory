@@ -29,6 +29,7 @@ This is an MVP. It already supports:
   including update/delete and duplicate suppression;
 - JSON export/import for pinned memory backups and project-profile handoffs;
 - a bootstrap flow that imports recent memory, summarizes the queue, and returns context;
+- project candidate discovery for temporary Codex `new-chat*` workspaces;
 - queue processing with extractive summaries;
 - optional AI summaries through `codex exec --ephemeral`;
 - optional configurable external sources through `sources.json`;
@@ -129,7 +130,10 @@ Data defaults to `%USERPROFILE%\.codex-native-memory`. Override it with
 - `memory_context`: build project-oriented context from recent sessions, summaries,
   decisions, open questions, observations, and optional query matches.
 - `memory_bootstrap`: import recent memory, process pending summaries, and return
-  a dynamic project profile plus `memory_context` output in one call.
+  a dynamic project profile plus `memory_context` output in one call. When the
+  current cwd is a temporary Codex `new-chat*` workspace with little memory, the
+  result also includes `project_candidates` and, when useful,
+  `recommended_profile`/`recommended_context` for the likely real project.
 - `memory_remember`: store a pinned memory item for future bootstrap/context.
 - `memory_notes`: list pinned memory items for a project/cwd.
 - `memory_update`: update a pinned memory item by id.

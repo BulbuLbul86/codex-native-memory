@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -61,14 +62,63 @@ def bootstrap_memory(
         query=query,
         limit=context_limit,
     )
-    return {
+    candidates = db.project_candidates(project=project, cwd=cwd, query=query, limit=5)
+    resolution: dict[str, Any] = {
+        "requested_project": context["project"],
+        "effective_project": context["project"],
+        "strategy": "direct",
+        "confidence": "high",
+        "reason": "The requested project has direct context.",
+    }
+    recommended_profile: dict[str, Any] | None = None
+    recommended_context: dict[str, Any] | None = None
+    if candidates and _should_recommend_project_context(context=context, cwd=cwd):
+        recommended = candidates[0]
+        effective_project = str(recommended["project"])
+        resolution = {
+            "requested_project": context["project"],
+            "effective_project": effective_project,
+            "strategy": "recommended_candidate",
+            "confidence": recommended["confidence"],
+            "reason": (
+                "The current Codex workspace looks temporary and has little memory; "
+                "a recent related project is available."
+            ),
+        }
+        recommended_profile = db.project_profile(
+            project=effective_project,
+            limit=max(context_limit * 2, 10),
+        )
+        recommended_context = db.project_context(
+            project=effective_project,
+            query=query,
+            limit=context_limit,
+        )
+    payload: dict[str, Any] = {
         "import": import_stats,
         "summaries": summary_stats,
         "profile": profile,
         "context": context,
+        "project_resolution": resolution,
+        "project_candidates": candidates,
         "codex_only": all(source.id == "codex" for source in enabled_sources),
         "primary_coding_ai": review["primary_coding_ai"],
         "external_review_configured": review["external_review_configured"],
         "review_targets": review["review_targets"],
         "review_question": review["question"],
     }
+    if recommended_profile is not None and recommended_context is not None:
+        payload["recommended_profile"] = recommended_profile
+        payload["recommended_context"] = recommended_context
+    return payload
+
+
+def _should_recommend_project_context(*, context: dict[str, Any], cwd: str | Path | None) -> bool:
+    project = str(context.get("project") or "").strip().lower()
+    if not re.fullmatch(r"new-chat(?:-\d+)?", project):
+        return False
+    if int(context.get("session_count") or 0) > 1:
+        return False
+    if cwd is None:
+        return True
+    return re.fullmatch(r"new-chat(?:-\d+)?", Path(cwd).name.lower()) is not None

@@ -19,6 +19,11 @@ Preferred flow:
    when available. Use its pinned memory and dynamic profile to gather
    preferences, constraints, warnings, recent activity, decisions, open
    questions, and relevant matches.
+   If the bootstrap result includes `project_resolution.strategy =
+   "recommended_candidate"`, treat `recommended_profile` and
+   `recommended_context` as the likely real project context. When its confidence
+   is `high`, use it directly; when confidence is lower, mention the suggested
+   project briefly and avoid presenting it as certain.
 2. If `memory_bootstrap` is unavailable or too heavy for the task, call
    `memory_context` with the current project/cwd and a focused query.
 3. For narrow lookups, or when `memory_context` returns too little, call
