@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a problem with Codex Native Memory.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please remove secrets, tokens, private
+        transcript text, and database dumps before posting.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include commands or Codex prompts when possible.
+      placeholder: |
+        1. Run ...
+        2. Ask Codex ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor output
+      description: Paste reviewed output from `python -m codex_native_memory doctor --json`.
+      render: json
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: Windows 11, macOS, Ubuntu, etc.
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.11.9"

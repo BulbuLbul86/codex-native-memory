@@ -4,12 +4,9 @@ All notable changes to Codex Native Memory are documented here.
 
 ## Unreleased
 
-- Added public project hygiene: CI workflow, contributing guide, security policy,
-  release checklist, and cross-platform install notes.
-- Added MCP diagnostics through `doctor --json` and `memory_health`.
-- Made the MCP command open SQLite lazily on the first tool call.
+- No unreleased changes yet.
 
-## 0.1.0
+## 0.1.0 - 2026-06-29
 
 - Added local Codex transcript import from `~/.codex/sessions/**/*.jsonl`.
 - Added SQLite storage, FTS search, recent-session lookup, and project context.
@@ -20,3 +17,8 @@ All notable changes to Codex Native Memory are documented here.
   configuration for Claude, Gemini, and generic JSONL sources.
 - Added temporary `new-chat*` project candidate discovery.
 - Added memory export/import for pinned project handoff.
+- Added MCP diagnostics through `doctor --json` and `memory_health`.
+- Made the MCP command open SQLite lazily on the first tool call.
+- Added public project hygiene: CI workflow, contributing guide, security policy,
+  release checklist, issue templates, release notes, and cross-platform install
+  docs.

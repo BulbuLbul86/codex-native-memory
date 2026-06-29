@@ -10,10 +10,16 @@ class ReleaseFilesTests(unittest.TestCase):
     def test_public_project_files_are_present(self) -> None:
         expected = [
             ".github/workflows/ci.yml",
+            ".github/ISSUE_TEMPLATE/bug_report.yml",
+            ".github/ISSUE_TEMPLATE/feature_request.yml",
+            ".github/pull_request_template.md",
             "CHANGELOG.md",
             "CONTRIBUTING.md",
             "LICENSE",
             "SECURITY.md",
+            "docs/INSTALL.md",
+            "docs/TROUBLESHOOTING.md",
+            "docs/RELEASE_NOTES_v0.1.0.md",
             "scripts/install-for-codex.ps1",
             "scripts/install-for-codex.sh",
             "scripts/run-mcp.ps1",

@@ -1,12 +1,35 @@
 # Codex Native Memory
 
+[![CI](https://github.com/BulbuLbul86/codex-native-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/BulbuLbul86/codex-native-memory/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://github.com/BulbuLbul86/codex-native-memory/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 Local cross-session memory for Codex Desktop and Codex CLI.
+
+> [!NOTE]
+> Codex is the primary coding AI. Claude, Gemini, and other tools are optional
+> attached sources or review targets. If you only use Codex, there is nothing
+> extra to configure.
 
 The goal is deliberately narrow: import Codex transcript JSONL files, index them
 locally in SQLite, expose search through MCP, and optionally ask the local Codex
 CLI to summarize conversations. No Claude, Gemini, OpenRouter, or vendor API key
 is required. The summarizer uses the user's existing Codex/ChatGPT auth through
 `codex exec`.
+
+## Documentation
+
+- [Install guide](docs/INSTALL.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Release notes](docs/RELEASE_NOTES_v0.1.0.md)
+- [Changelog](CHANGELOG.md)
+- [Security policy](SECURITY.md)
+
+## How It Works
+
+```text
+Codex transcripts -> local importer -> SQLite/FTS -> MCP tools -> Codex context
+```
 
 The architecture is Codex-first and project-centric. Codex is the primary
 coding shell and the default coding AI. Claude, Gemini, Cursor, Aider, or other
@@ -62,6 +85,8 @@ connect external AI tools.
 
 ## Quick start
 
+For the annotated install flow, see [docs/INSTALL.md](docs/INSTALL.md).
+
 Clone the repository and install the Python package in editable mode:
 
 ```powershell
@@ -104,6 +129,10 @@ Restart Codex after installing the MCP entry. In Codex, a normal prompt such as
 `подними память проекта` should be enough for the skill to call
 `memory_bootstrap`. The CLI commands above are fallback and maintenance tools,
 not something users should memorize for daily use.
+
+> [!TIP]
+> If Codex starts inside a temporary `new-chat*` folder, `memory_bootstrap`
+> can recommend the likely real project and return that project's context.
 
 To attach Claude/Gemini sources interactively later:
 
@@ -179,6 +208,8 @@ If a long-lived Codex thread reports that the MCP transport closed right after a
 plugin reinstall, check `doctor`/`memory_health` and retry in a fresh thread. The
 server uses JSON-lines stdio for Codex and opens SQLite lazily on the first tool
 call.
+
+For common setup issues, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 Search results are intentionally normalized around sessions, messages,
 summaries, and observations. External adapters should write into the same shape

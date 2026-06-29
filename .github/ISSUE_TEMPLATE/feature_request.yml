@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest an improvement for Codex Native Memory.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What workflow should improve?
+      description: Describe the current friction.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain what Codex Native Memory should do.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Codex MCP tools
+        - Import/backfill
+        - Search/context quality
+        - Pinned memory
+        - External sources
+        - Documentation
+        - Other
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add links, examples, or related constraints.
