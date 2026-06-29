@@ -47,7 +47,11 @@ Preferred flow:
    python -m codex_native_memory bootstrap "<query>" --cwd "<current cwd>" --summary-mode extractive --json
    ```
 
-7. Use retrieved memory as context, not as unquestioned truth. If the result is stale or uncertain,
+7. If an existing thread reports a closed MCP transport immediately after plugin
+   reinstall or process cleanup, use the CLI fallback above and, when useful,
+   run `python -m codex_native_memory doctor --json` or `memory_health` to
+   confirm the wrapper, package root, and database path.
+8. Use retrieved memory as context, not as unquestioned truth. If the result is stale or uncertain,
    verify against the current workspace.
 
 For broad project catch-up, search for the project name, the active task, and the user's exact

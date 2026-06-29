@@ -62,10 +62,19 @@ connect external AI tools.
 
 ## Quick start
 
-From this directory:
+Clone the repository and install the Python package in editable mode:
+
+```powershell
+git clone https://github.com/BulbuLbul86/codex-native-memory.git
+cd codex-native-memory
+python -m pip install -e ".[dev]"
+```
+
+From the repository directory:
 
 ```powershell
 python -m codex_native_memory doctor
+python -m codex_native_memory doctor --json
 python -m codex_native_memory init
 python -m codex_native_memory bootstrap "current task" --cwd "$PWD" --json
 python -m codex_native_memory remember "Codex remains the primary coding AI." --cwd "$PWD"
@@ -85,7 +94,16 @@ To expose it to Codex as MCP:
 .\scripts\install-for-codex.ps1
 ```
 
-Restart Codex after installing the MCP entry.
+On macOS/Linux:
+
+```bash
+./scripts/install-for-codex.sh
+```
+
+Restart Codex after installing the MCP entry. In Codex, a normal prompt such as
+`подними память проекта` should be enough for the skill to call
+`memory_bootstrap`. The CLI commands above are fallback and maintenance tools,
+not something users should memorize for daily use.
 
 To attach Claude/Gemini sources interactively later:
 
@@ -112,6 +130,18 @@ import [path]                Import pinned memory from an export JSON file/stdin
 process-queue                Summarize imported sessions.
 mcp                          Run the MCP stdio server.
 ```
+
+## Development
+
+```powershell
+python -m pip install -e ".[dev]"
+python -m ruff check .
+python -m compileall -q codex_native_memory
+python -m unittest discover -s tests -v
+```
+
+See `CONTRIBUTING.md`, `CHANGELOG.md`, and `SECURITY.md` before publishing a
+public release.
 
 `export` writes pinned memory. When scoped with `--project` or `--cwd`, it also
 includes a computed project profile for handoff context; unscoped exports omit
@@ -143,7 +173,12 @@ Data defaults to `%USERPROFILE%\.codex-native-memory`. Override it with
 - `memory_recent`: list recent imported sessions.
 - `memory_import`: import changed Codex transcript files.
 - `memory_sources`: list attached sources and external review options.
-- `memory_health`: show DB and provider health.
+- `memory_health`: show DB, package, MCP wrapper, provider, and source health.
+
+If a long-lived Codex thread reports that the MCP transport closed right after a
+plugin reinstall, check `doctor`/`memory_health` and retry in a fresh thread. The
+server uses JSON-lines stdio for Codex and opens SQLite lazily on the first tool
+call.
 
 Search results are intentionally normalized around sessions, messages,
 summaries, and observations. External adapters should write into the same shape

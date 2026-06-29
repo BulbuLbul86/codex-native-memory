@@ -11,6 +11,22 @@ requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "Local developer" }]
 dependencies = []
+keywords = ["codex", "memory", "mcp", "sqlite", "local-first"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.14.0"]
+
+[project.urls]
+Homepage = "https://github.com/BulbuLbul86/codex-native-memory"
+Issues = "https://github.com/BulbuLbul86/codex-native-memory/issues"
 
 [project.scripts]
 codex-native-memory = "codex_native_memory.cli:main"

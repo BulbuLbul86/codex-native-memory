@@ -214,6 +214,15 @@ class McpServerTests(unittest.TestCase):
                     },
                 },
             )
+            health = handle_message(
+                db,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 12,
+                    "method": "tools/call",
+                    "params": {"name": "memory_health", "arguments": {}},
+                },
+            )
             restored_notes = handle_message(
                 db,
                 {
@@ -241,6 +250,7 @@ class McpServerTests(unittest.TestCase):
         exported_payload = json.loads(exported["result"]["content"][0]["text"])
         forget_payload = json.loads(forget["result"]["content"][0]["text"])
         imported_payload = json.loads(imported["result"]["content"][0]["text"])
+        health_payload = json.loads(health["result"]["content"][0]["text"])
         restored_notes_payload = json.loads(restored_notes["result"]["content"][0]["text"])
         self.assertIn("memory_context", tool_names)
         self.assertIn("memory_bootstrap", tool_names)
@@ -270,6 +280,9 @@ class McpServerTests(unittest.TestCase):
         self.assertEqual(exported_payload["memories"][0]["id"], remember_payload["id"])
         self.assertTrue(forget_payload["deleted"])
         self.assertEqual(imported_payload["imported"], 1)
+        self.assertEqual(health_payload["package"]["name"], "codex-native-memory")
+        self.assertEqual(health_payload["mcp"]["transport"], "json-lines")
+        self.assertTrue(health_payload["sources"]["codex_only"])
         self.assertEqual(restored_notes_payload[0]["text"], update_payload["text"])
 
     def test_sources_and_errors_are_reported_without_crashing(self) -> None:

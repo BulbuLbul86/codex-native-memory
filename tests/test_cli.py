@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from codex_native_memory.cli import main
 
@@ -53,6 +54,33 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(code, 2)
         self.assertIn("codex-native-memory", output)
+
+    def test_doctor_reports_mcp_and_source_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            code, output = self.run_cli(["--data-dir", tmp, "doctor", "--json"])
+            payload = json.loads(output)
+
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["package"]["name"], "codex-native-memory")
+            self.assertEqual(payload["data_dir"], str(Path(tmp).resolve()))
+            self.assertEqual(payload["sources"]["primary_coding_ai"]["id"], "codex")
+            self.assertTrue(payload["sources"]["codex_only"])
+            self.assertEqual(payload["mcp"]["transport"], "json-lines")
+            self.assertTrue(payload["mcp"]["accepts_content_length"])
+
+    def test_mcp_command_defers_database_open_until_tool_call(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                patch("codex_native_memory.cli.serve") as serve,
+                patch(
+                    "codex_native_memory.cli.MemoryDB",
+                    side_effect=AssertionError("mcp should not open the database at startup"),
+                ),
+            ):
+                code = main(["--data-dir", tmp, "mcp"])
+
+            self.assertEqual(code, 0)
+            serve.assert_called_once_with()
 
     def test_core_cli_workflow_imports_searches_and_processes_queue(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

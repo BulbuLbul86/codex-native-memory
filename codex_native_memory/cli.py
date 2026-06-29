@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from dataclasses import asdict
@@ -9,11 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from .bootstrap import bootstrap_memory
-from .codex_provider import CodexProvider
 from .db import MemoryDB
+from .diagnostics import build_health_report
 from .ingest import backfill, backfill_configured_sources
 from .mcp_server import serve
-from .paths import default_transcript_globs, ensure_runtime_dirs
+from .paths import ENV_HOME, ensure_runtime_dirs
 from .processor import Processor
 from .sources import (
     SOURCE_TYPES,
@@ -231,21 +232,19 @@ def build_parser() -> argparse.ArgumentParser:
 def cmd_doctor(args: argparse.Namespace) -> int:
     root = ensure_runtime_dirs(args.data_dir)
     db = MemoryDB(root / "memory.sqlite3")
-    provider = CodexProvider(root=root)
-    payload: dict[str, Any] = {
-        "data_dir": str(root),
-        "transcript_globs": default_transcript_globs(),
-        "codex_cli": str(provider.codex_path) if provider.codex_path else None,
-        "codex_provider_available": provider.available(),
-        "db": db.stats(),
-    }
+    payload = build_health_report(db)
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
+        print(f"Package: {payload['package']['name']} {payload['package']['version']}")
+        print(f"Package root: {payload['package']['root']}")
         print(f"Data dir: {payload['data_dir']}")
         print(f"Codex CLI: {payload['codex_cli'] or 'not found'}")
         provider_status = "available" if payload["codex_provider_available"] else "unavailable"
         print(f"Codex provider: {provider_status}")
+        print(f"MCP wrapper: {payload['mcp']['wrapper_path']}")
+        wrapper_status = "yes" if payload["mcp"]["wrapper_exists"] else "no"
+        print(f"MCP wrapper exists: {wrapper_status}")
         print(f"Database: {payload['db']['path']}")
         print(f"Sessions: {payload['db']['sessions']}")
         print(f"Messages: {payload['db']['messages']}")
@@ -607,9 +606,10 @@ def cmd_sources_review_options(args: argparse.Namespace) -> int:
 
 
 def cmd_mcp(args: argparse.Namespace) -> int:
-    root = ensure_runtime_dirs(args.data_dir)
-    db = MemoryDB(root / "memory.sqlite3")
-    serve(db)
+    if args.data_dir:
+        root = ensure_runtime_dirs(args.data_dir)
+        os.environ[ENV_HOME] = str(root)
+    serve()
     return 0
 
 

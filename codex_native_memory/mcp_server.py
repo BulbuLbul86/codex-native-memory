@@ -8,6 +8,7 @@ from typing import Any, BinaryIO
 from . import __version__
 from .bootstrap import bootstrap_memory
 from .db import MemoryDB
+from .diagnostics import build_health_report
 from .ingest import backfill, backfill_configured_sources
 from .sources import load_sources, review_options
 
@@ -383,7 +384,7 @@ def call_tool(db: MemoryDB, params: dict[str, Any]) -> dict[str, Any]:
                 "sources": [asdict(source) for source in config.sources],
             }
     elif name == "memory_health":
-        payload = db.stats()
+        payload = build_health_report(db)
     else:
         raise ValueError(f"Unknown tool: {name}")
     text = json.dumps(payload, ensure_ascii=False, indent=2)
